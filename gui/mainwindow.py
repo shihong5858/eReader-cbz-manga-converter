@@ -7,8 +7,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QWidget, QProgressBar, 
     QLabel, QLineEdit, QStyle, QStyleFactory, QDialog, QComboBox
 )
-from PySide6.QtCore import QThread, Signal, Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from components.conversion import ConversionWorker
 
 # Set system monospace font based on platform
 if sys.platform == "darwin":
@@ -414,6 +415,7 @@ class MainWindow(QMainWindow):
     def handle_selected_paths(self, paths):
         # Reset progress and status
         self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("0%")
         self.progress_status.clear()
         self.input_files = paths
         
@@ -483,6 +485,11 @@ class MainWindow(QMainWindow):
         if not self.input_files or not self.output_path.text():
             return
         
+        # Reset progress and status
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFormat("0%")
+        self.progress_status.clear()
+        
         # Disable UI elements during conversion
         self.convert_button.setEnabled(False)
         self.select_input_button.setEnabled(False)
@@ -506,9 +513,6 @@ class MainWindow(QMainWindow):
         self.drop_area.style().polish(self.drop_area)
         
         self.current_file_index = 0
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("0%")
-        self.progress_status.clear()
         self.process_next_file()
 
     def process_next_file(self):
@@ -525,8 +529,8 @@ class MainWindow(QMainWindow):
         total_files = len(self.input_files)
         self.progress_status.setText(f"Converting file {self.current_file_index + 1} of {total_files}: {current_file}")
         
-        from worker import SingleFileWorker
-        self.worker = SingleFileWorker(input_file, output_dir, kcc_options)
+        # Create and configure worker
+        self.worker = ConversionWorker(input_file, output_dir)
         self.worker.progress.connect(self.update_progress)
         self.worker.status.connect(self.update_status)
         self.worker.completed.connect(self.file_processed)
@@ -535,19 +539,35 @@ class MainWindow(QMainWindow):
 
     def update_progress(self, progress):
         """Update progress bar and status."""
+        # Ensure progress is an integer
+        try:
+            progress = int(progress)
+        except (TypeError, ValueError):
+            return
+
         total_files = len(self.input_files)
         if total_files == 1:
             # Single file mode
             self.progress_bar.setValue(progress)
             self.progress_bar.setFormat(f"{progress}%")
         else:
-            # Multiple files mode
-            file_contribution = self.current_file_index * 100
-            total_progress = (file_contribution + progress) / total_files
+            # Multiple files mode - calculate overall progress
+            # Each file contributes (100/total_files)% to the total progress
+            file_weight = 100.0 / total_files
+            # Calculate progress: completed files + current file progress
+            completed_files_progress = self.current_file_index * file_weight
+            current_file_progress = (progress * file_weight) / 100
+            total_progress = completed_files_progress + current_file_progress
+            
+            # Ensure progress value is valid
+            total_progress = max(0, min(100, total_progress))
+            
             self.progress_bar.setValue(int(total_progress))
             self.progress_bar.setFormat(f"{int(total_progress)}%")
+            
+            current_file = os.path.basename(self.input_files[self.current_file_index])
             self.progress_status.setText(
-                f"File {self.current_file_index + 1} of {total_files}"
+                f"File {self.current_file_index + 1} of {total_files} - {current_file} ({progress}%)"
             )
 
     def update_status(self, status):
@@ -663,16 +683,21 @@ class MainWindow(QMainWindow):
                 event.acceptProposedAction()
 
     def dropEvent(self, event: QDropEvent):
-        paths = []
-        for url in event.mimeData().urls():
-            local_file = url.toLocalFile()
-            if os.path.isfile(local_file) and local_file.lower().endswith('.epub'):
-                paths.append(local_file)
-            elif os.path.isdir(local_file):
-                paths.append(local_file)
-        
-        if paths:
-            self.handle_selected_paths(paths)
+        if not self.drop_area.property("disabled"):
+            paths = []
+            for url in event.mimeData().urls():
+                local_file = url.toLocalFile()
+                if os.path.isfile(local_file) and local_file.lower().endswith('.epub'):
+                    paths.append(local_file)
+                elif os.path.isdir(local_file):
+                    paths.append(local_file)
+            
+            if paths:
+                # Reset progress bar before handling new files
+                self.progress_bar.setValue(0)
+                self.progress_bar.setFormat("0%")
+                self.progress_status.clear()
+                self.handle_selected_paths(paths)
 
     def closeEvent(self, event):
         if self.worker and self.worker.isRunning():
