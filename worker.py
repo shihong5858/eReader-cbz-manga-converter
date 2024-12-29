@@ -1,6 +1,14 @@
 from PySide6.QtCore import QThread, Signal
+import os
 import logging
+import sys
 import re
+
+# Add KCC directory to Python path
+kcc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kcc')
+sys.path.append(kcc_dir)
+
+from main import process_with_kcc
 
 class SingleFileWorker(QThread):
     """Worker thread for converting a single file."""
@@ -12,10 +20,11 @@ class SingleFileWorker(QThread):
     # Progress steps and their corresponding percentage
     PROGRESS_STEPS = {
         "Starting conversion": 0,
-        "Preparing source images": 10,
-        "Checking images": 20,
-        "Processing images": 60,
-        "Creating CBZ file": 90,
+        "Processing EPUB file": 10,
+        "Extracting images": 20,
+        "Processing images": 40,
+        "Creating ZIP file": 60,
+        "Running KCC conversion": 80,
         "Completed": 100
     }
     
@@ -24,12 +33,8 @@ class SingleFileWorker(QThread):
         self.input_file = input_file
         self.output_dir = output_dir
         self.kcc_options = kcc_options
-        self._is_running = True
+        self._stop = False
         self._current_step = ""
-        
-    def stop(self):
-        """Stop the worker thread."""
-        self._is_running = False
     
     def update_progress(self, message):
         """Update progress based on the current processing step."""
@@ -40,9 +45,8 @@ class SingleFileWorker(QThread):
             self.progress.emit(progress)
             self.status.emit(message)
             logging.debug(f"Progress update: {message} ({progress}%)")
-        
+
     def run(self):
-        """Run the conversion process."""
         try:
             # Set up logging handler to capture progress messages
             class ProgressHandler(logging.Handler):
@@ -51,12 +55,13 @@ class SingleFileWorker(QThread):
                     self.worker = worker
                     # Regular expressions for matching progress messages
                     self.patterns = [
-                        (r"Working on .+", "Starting conversion"),
-                        (r"Preparing source images", "Preparing source images"),
-                        (r"Checking images", "Checking images"),
+                        (r"Starting conversion", "Starting conversion"),
+                        (r"Processing EPUB file", "Processing EPUB file"),
+                        (r"Extracting images", "Extracting images"),
                         (r"Processing images", "Processing images"),
-                        (r"Creating CBZ file", "Creating CBZ file"),
-                        (r"KCC processing completed successfully", "Completed")
+                        (r"Creating ZIP file", "Creating ZIP file"),
+                        (r"Running KCC conversion", "Running KCC conversion"),
+                        (r"Conversion completed", "Completed")
                     ]
                 
                 def emit(self, record):
@@ -82,14 +87,18 @@ class SingleFileWorker(QThread):
                 self.status.emit("Starting conversion...")
                 
                 # Run conversion
-                from main import convert_epub_to_cbz
-                success, error = convert_epub_to_cbz(self.input_file, self.output_dir, self.kcc_options)
+                success = process_with_kcc(
+                    self.input_file, 
+                    self.output_dir,
+                    progress_callback=self.progress.emit,
+                    status_callback=self.status.emit
+                )
                 
                 if success:
                     self.update_progress("Completed")
                     self.completed.emit(True)
                 else:
-                    self.error.emit(error if error else "Unknown error occurred")
+                    self.error.emit("Conversion failed")
                     self.completed.emit(False)
                     
             finally:
@@ -97,5 +106,9 @@ class SingleFileWorker(QThread):
                 logger.removeHandler(handler)
                 
         except Exception as e:
+            logging.error(f"Error in worker: {str(e)}")
             self.error.emit(str(e))
-            self.completed.emit(False) 
+            self.completed.emit(False)
+
+    def stop(self):
+        self._stop = True 
