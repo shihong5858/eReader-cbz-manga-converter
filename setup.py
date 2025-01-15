@@ -2,18 +2,28 @@ from setuptools import setup
 import os
 import shiboken6
 
-# 获取 shiboken6 库文件的路径
+# Get shiboken6 library path
 shiboken6_path = os.path.dirname(shiboken6.__file__)
 shiboken6_lib = os.path.join(shiboken6_path, 'libshiboken6.abi3.6.6.dylib')
 
 APP = ['main.py']
-DATA_FILES = []
+DATA_FILES = [
+    ('', ['device_info.json']),
+    ('gui', ['gui/device_info.json']),
+    ('kcc', ['kcc/kindlecomicconverter/image.py',
+             'kcc/kindlecomicconverter/shared.py',
+             'kcc/kindlecomicconverter/comic2ebook.py']),
+]
+
 OPTIONS = {
-    'argv_emulation': False,
-    'packages': ['PySide6', 'ebooklib', 'PIL', 'py7zr'],
+    'packages': ['PySide6', 'ebooklib', 'PIL', 'py7zr', 'kcc'],
     'includes': ['shiboken6'],
-    'qt_plugins': ['platforms', 'styles'],
+    'excludes': ['tkinter', 'matplotlib'],
+    'qt_plugins': ['platforms', 'styles', 'imageformats'],
     'strip': True,
+    'iconfile': 'app.icns',
+    'semi_standalone': True,
+    'site_packages': True,
     'plist': {
         'CFBundleName': 'Kobo Manga Converter',
         'CFBundleDisplayName': 'Kobo Manga Converter',
@@ -23,6 +33,12 @@ OPTIONS = {
         'LSMinimumSystemVersion': '10.15',
         'NSHighResolutionCapable': True,
         'NSPrincipalClass': 'NSApplication',
+        'LSBackgroundOnly': False,
+        'CFBundleDocumentTypes': [{
+            'CFBundleTypeName': 'Comic Book Archive',
+            'CFBundleTypeExtensions': ['cbz', 'zip'],
+            'CFBundleTypeRole': 'Viewer',
+        }],
     },
 }
 
