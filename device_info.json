@@ -260,6 +260,15 @@
         "palette": 16,
         "sharpness": 1.8
     },
+    "iPadMini": {
+        "name": "iPad mini 6/7",
+        "display": {
+            "width": 1488,
+            "height": 2266
+        },
+        "palette": 16,
+        "sharpness": 1.8
+    },
     "OTHER": {
         "name": "Other",
         "display": {

@@ -9,7 +9,6 @@ shiboken6_lib = os.path.join(shiboken6_path, 'libshiboken6.abi3.6.6.dylib')
 APP = ['main.py']
 DATA_FILES = [
     ('', ['device_info.json']),
-    ('gui', ['gui/device_info.json']),
     ('kcc', ['kcc/kindlecomicconverter/image.py',
              'kcc/kindlecomicconverter/shared.py',
              'kcc/kindlecomicconverter/comic2ebook.py']),

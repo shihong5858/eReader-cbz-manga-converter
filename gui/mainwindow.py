@@ -708,7 +708,7 @@ class MainWindow(QMainWindow):
     def load_device_info(self):
         """Load device information from JSON file and populate the combo box."""
         try:
-            with open('gui/device_info.json', 'r', encoding='utf-8') as f:
+            with open('device_info.json', 'r', encoding='utf-8') as f:
                 self.device_info = json.load(f)
             
             # Sort devices by name for display
