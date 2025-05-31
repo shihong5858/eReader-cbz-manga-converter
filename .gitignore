@@ -10,14 +10,45 @@ dist/
 # Virtual Environment
 .venv/
 venv/
+env/
+ENV/
 
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
 
-# Project specific
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Large binary files and executables
+*.exe
+*.dmg
+*.app
+*.deb
+*.rpm
+
+# Project specific directories that shouldn't be tracked
 -o/
 -p/
+cbz-manga-converter-1/
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+
+# Log files
+*.log
+
+# Cache files
+*.cache
