@@ -34,17 +34,17 @@ SPEC_DIR.mkdir(exist_ok=True, parents=True)
 
 def print_step(message: str):
     """Print a build step with formatting."""
-    print(f"\n📦 {message}")
+    print(f"\n[BUILD] {message}")
 
 
 def print_success(message: str):
     """Print a success message."""
-    print(f"✅ {message}")
+    print(f"[SUCCESS] {message}")
 
 
 def print_error(message: str):
     """Print an error message."""
-    print(f"❌ {message}")
+    print(f"[ERROR] {message}")
 
 
 def run_app():
@@ -259,7 +259,6 @@ def get_build_command(target_platform: Optional[str] = None) -> List[str]:
     elif target_platform == "win32":  # Windows
         cmd.extend([
             "-F",  # Create one-file executable
-            "-i", "assets/app.icns",
             "-n", "eReader_CBZ_Manga_Converter_1.1.0",
             "--noupx",
         ])
@@ -307,14 +306,14 @@ def build_package(target_platform: Optional[str] = None):
             for spec_file in spec_files:
                 new_location = SPEC_DIR / spec_file.name
                 spec_file.rename(new_location)
-                print(f"  📝 Moved {spec_file.name} to {SPEC_DIR}/")
+                print(f"  [INFO] Moved {spec_file.name} to {SPEC_DIR}/")
 
         # Create DMG for macOS if appdmg is available
         if target_platform == "darwin" and shutil.which("appdmg"):
             create_macos_dmg()
 
         # Show build output location
-        print(f"  📁 Output location: {DIST_DIR.absolute()}")
+        print(f"  [INFO] Output location: {DIST_DIR.absolute()}")
 
     except subprocess.CalledProcessError as e:
         print_error(f"Build failed: {e}")
@@ -329,7 +328,7 @@ def create_macos_dmg():
 
     installer_config = Path("config/installer.json")
     if not installer_config.exists():
-        print("  ⚠️  config/installer.json not found, skipping DMG creation")
+        print("  [WARNING] config/installer.json not found, skipping DMG creation")
         return
 
     try:
@@ -348,7 +347,7 @@ def main():
     """Main entry point."""
     if len(sys.argv) < 2:
         print("""
-🛠️  eReader CBZ Manga Converter - Build & Development Script
+eReader CBZ Manga Converter - Build & Development Script
 
 Usage:
     python build.py <command>
@@ -389,11 +388,11 @@ Examples:
     elif command == "check":
         check_quality()
     else:
-        print(f"❌ Unknown command: {command}")
+        print(f"[ERROR] Unknown command: {command}")
         print("Run 'python build.py' for help")
 
     if command != "run":  # Don't show completion message for run command
-        print_success("🎉 Operation completed!")
+        print_success("Operation completed!")
 
 
 if __name__ == "__main__":
