@@ -1,0 +1,100 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eReader-CBZ-Manga-Converter"
+version = "1.1.0"
+description = "Convert EPUB files to CBZ format optimized for eReaders"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "eReader CBZ Manga Converter Contributors"}
+]
+
+dependencies = [
+    "PySide6>=6.5.1",
+    "ebooklib>=0.18",
+    "lxml>=4.9.0",
+    "beautifulsoup4>=4.11.0",
+    "Pillow>=9.0.0",
+    "psutil>=5.9.5",
+    "requests>=2.31.0",
+    "python-slugify>=1.2.1",
+    "packaging>=23.2",
+    "mozjpeg-lossless-optimization>=1.1.2",
+    "natsort[fast]>=8.4.0",
+    "distro>=1.8.0",
+    "numpy>=1.22.4,<2.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0"
+]
+build = [
+    "pyinstaller>=5.0.0",
+]
+
+[project.scripts]
+erc-dev = "scripts.dev:main"
+
+[project.urls]
+Homepage = "https://github.com/shihong5858/eReader-cbz-manga-converter"
+Repository = "https://github.com/shihong5858/eReader-cbz-manga-converter.git"
+Issues = "https://github.com/shihong5858/eReader-cbz-manga-converter/issues"
+
+# Setuptools configuration
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["components*", "gui*", "kcc*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.icns", "*.png"]
+
+# Ruff configuration (replaces Black, isort, flake8)
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by formatter
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # 逐步启用
+ignore_missing_imports = true
+
+# Build script for PyInstaller
+[tool.build-script]
+# Custom section for build commands
+macos-command = """
+pyinstaller --hidden-import=_cffi_backend --hidden-import=html.parser --hidden-import=xml.etree.ElementTree --hidden-import=xml.dom --hidden-import=lxml --hidden-import=ebooklib --hidden-import=bs4 --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=PIL.ImageFile --hidden-import=PIL.ImageDraw --hidden-import=PIL.ImageFont --hidden-import=PIL.ImageOps --hidden-import=PIL.ImageChops --hidden-import=PIL.ImageFilter --hidden-import=PIL.ImageEnhance --hidden-import=Pillow --hidden-import=zipfile --hidden-import=tempfile --hidden-import=shutil --hidden-import=queue --hidden-import=kindlecomicconverter --hidden-import=kindlecomicconverter.comic2ebook --hidden-import=kindlecomicconverter.comic2panel --hidden-import=kindlecomicconverter.shared --hidden-import=kindlecomicconverter.startup --hidden-import=uuid --hidden-import=natsort --hidden-import=slugify --hidden-import=psutil --hidden-import=multiprocessing --hidden-import=pathlib --hidden-import=glob --hidden-import=stat --hidden-import=argparse --hidden-import=time --hidden-import=copy --hidden-import=re --hidden-import=subprocess --hidden-import=html --hidden-import=mozjpeg_lossless_optimization --hidden-import=requests --hidden-import=packaging --hidden-import=distro --hidden-import=numpy --hidden-import=cffi --hidden-import=fastnumbers -y -D -i app.icns -n "eReader CBZ Manga Converter" -w --add-data "components:components" --add-data "gui:gui" --add-data "kcc/kindlecomicconverter:kindlecomicconverter" --add-data "device_info.json:." main.py
+""" 

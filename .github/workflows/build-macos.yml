@@ -16,7 +16,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-12, macos-14]  # 支持Intel和Apple Silicon
+        os: [macos-12, macos-14]  # Support Intel and Apple Silicon
     runs-on: ${{ matrix.os }}
     
     steps:
@@ -29,35 +29,38 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel pyinstaller
+          python -m pip install --upgrade pip setuptools wheel pyinstaller certifi
           pip install -r requirements.txt
           
-      - name: Build macOS app
+      - name: Install Node.js for appdmg
+        uses: actions/setup-node@v4
+        with:
+          node-version: 16
+          
+      - name: Install appdmg
+        run: npm install -g appdmg
+          
+      - name: Build macOS binary
         run: |
           python setup.py build_binary
-          
-      - name: Create DMG (optional)
-        run: |
-          # 如果有 app.icns 和足够的配置，可以创建DMG
-          # 这里简化处理，直接压缩.app文件
-          cd dist
-          APP_NAME="eReader CBZ Manga Converter.app"
-          if [ -d "$APP_NAME" ]; then
-            tar -czf "eReader_CBZ_Manga_Converter_macOS_${{ runner.arch }}.tar.gz" "$APP_NAME"
-          fi
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-build-${{ runner.arch }}
           path: |
-            dist/*.tar.gz
+            dist/*.dmg
             dist/*.app
             
       - name: Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/*.tar.gz 
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            CHANGELOG.md
+            LICENSE
+            dist/*.dmg 

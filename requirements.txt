@@ -1,5 +1,0 @@
-PySide6
-ebooklib
-lxml
-beautifulsoup4
-Pillow 

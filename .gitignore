@@ -1,57 +1,27 @@
-# Python
+# Python bytecode
 __pycache__/
-*.py[cod]
-*$py.class
-.eggs/
+*.pyc
+*.pyo
+
+# Build artifacts
 build/
 dist/
-*.egg-info/
+*.spec
 
-# Virtual Environment
+# Virtual environment
 .venv/
-venv/
-env/
-ENV/
+
+# Code quality tools
+.ruff_cache/
+.mypy_cache/
+
+# macOS system files
+.DS_Store
 
 # IDE
-.idea/
 .vscode/
-*.swp
-*.swo
-*~
+.idea/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# Large binary files and executables
-*.exe
-*.dmg
-*.app
-*.deb
-*.rpm
-
-# Project specific directories that shouldn't be tracked
--o/
--p/
-cbz-manga-converter-1/
-
-# Backup files
-*.bak
-*.backup
-*.tmp
-
-# Log files
-*.log
-
-# Cache files
-*.cache
-
-# PyInstaller generated files
-*.spec
+# Test input/output (pattern for user-specified output directories)
+input/
+output/

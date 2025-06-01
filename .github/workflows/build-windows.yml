@@ -27,12 +27,9 @@ jobs:
           cache: 'pip'
           
       - name: Install dependencies
-        env:
-          PYINSTALLER_COMPILE_BOOTLOADER: 1
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip setuptools wheel pyinstaller certifi
           pip install -r requirements.txt
-          pip install pyinstaller --no-binary pyinstaller
           
       - name: Build Windows executable
         run: |
@@ -48,4 +45,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/*.exe
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            CHANGELOG.md
+            LICENSE
+            dist/*.exe

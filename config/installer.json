@@ -1,0 +1,10 @@
+{
+  "title": "eReader CBZ Manga Converter",
+  "icon": "app.icns",
+  "background": "installer_background.png",
+  "icon-size": 160,
+  "contents": [
+    { "x": 180, "y": 300, "type": "file", "path": "dist/eReader CBZ Manga Converter.app" },
+    { "x": 520, "y": 300, "type": "link", "path": "/Applications" }
+  ]
+} 
