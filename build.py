@@ -356,6 +356,22 @@ def build_package(target_platform: Optional[str] = None):
                         else:
                             item.unlink()
                             print(f"  [INFO] Removed extra file: {item.name}")
+                
+                # Add ad-hoc code signing to prevent App Translocation
+                print(f"  [INFO] Signing app to prevent App Translocation...")
+                try:
+                    subprocess.run([
+                        "codesign", 
+                        "--force", 
+                        "--deep", 
+                        "--sign", "-",  # Ad-hoc signature
+                        str(app_path)
+                    ], check=True, capture_output=True)
+                    print(f"  [INFO] App signed successfully")
+                except subprocess.CalledProcessError as e:
+                    print(f"  [WARNING] Code signing failed: {e}")
+                    print(f"  [WARNING] App may be subject to App Translocation")
+                    
             else:
                 print(f"  [WARNING] Expected .app bundle not found: {app_name}")
 

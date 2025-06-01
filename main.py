@@ -4,14 +4,17 @@ import os
 import sys
 import datetime
 
-# Fix working directory for PyInstaller
+# Import ResourceManager early
+from components.resource_manager import get_resource_manager
+
+# Initialize ResourceManager and get paths
+resource_manager = get_resource_manager()
+
+# Fix working directory for PyInstaller using ResourceManager
 def fix_working_directory():
     if getattr(sys, 'frozen', False):
-        if hasattr(sys, '_MEIPASS'):
-            app_dir = sys._MEIPASS
-        else:
-            app_dir = os.path.dirname(sys.executable)
-        os.chdir(app_dir)
+        base_path = resource_manager.base_path
+        os.chdir(str(base_path))
 
 # Fix working directory immediately
 fix_working_directory()
@@ -39,11 +42,12 @@ def setup_logging():
     logger.info("="*60)
     logger.info("eReader CBZ Manga Converter - Debug Session Started")
     logger.info(f"Log file: {log_file_path}")
-    logger.info(f"Python frozen: {getattr(sys, 'frozen', False)}")
-    logger.info(f"Current working directory: {os.getcwd()}")
-    logger.info(f"sys.executable: {sys.executable}")
-    if hasattr(sys, '_MEIPASS'):
-        logger.info(f"sys._MEIPASS: {sys._MEIPASS}")
+    
+    # Log ResourceManager debug info
+    debug_info = resource_manager.debug_info()
+    for key, value in debug_info.items():
+        logger.info(f"{key}: {value}")
+    
     logger.info("="*60)
 
 # Setup logging immediately
@@ -70,27 +74,14 @@ from gui.mainwindow import MainWindow
 
 logger = logging.getLogger(__name__)
 
-# Add KCC directory to Python path
-if getattr(sys, 'frozen', False):
-    # In packaged environment
-    if hasattr(sys, '_MEIPASS'):
-        kcc_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
-    else:
-        app_dir = os.path.dirname(sys.executable)
-        resources_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
-        kcc_dir = os.path.join(resources_dir, 'kindlecomicconverter')
-else:
-    # Development environment
-    kcc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kcc')
+# Add KCC directory to Python path using ResourceManager
+kcc_added = resource_manager.add_kcc_to_path()
+logger.info(f"KCC directory path: {resource_manager.kcc_path}")
+logger.info(f"KCC directory exists: {resource_manager.kcc_path.exists()}")
+logger.info(f"Added KCC to sys.path: {kcc_added}")
 
-logger.info(f"KCC directory path: {kcc_dir}")
-logger.info(f"KCC directory exists: {os.path.exists(kcc_dir)}")
-
-if os.path.exists(kcc_dir):
-    sys.path.insert(0, kcc_dir)
-    logger.info(f"Added KCC to sys.path: {kcc_dir}")
-else:
-    logger.error(f"KCC directory not found: {kcc_dir}")
+if not kcc_added:
+    logger.error(f"KCC directory not found or could not be added: {resource_manager.kcc_path}")
 
 def main():
     # Set multiprocessing start method for KCC compatibility

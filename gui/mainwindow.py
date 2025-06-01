@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from components.conversion import ConversionWorker
+from components.resource_manager import get_resource_manager
 
 # Set system monospace font based on platform
 if sys.platform == "darwin":
@@ -717,64 +719,73 @@ class MainWindow(QMainWindow):
     def load_device_info(self):
         """Load device information from JSON file and populate the combo box."""
         try:
-            # Find the device_info.json file
-            device_info_path = None
+            # Use ResourceManager to find device_info.json
+            resource_manager = get_resource_manager()
+            device_info_path = resource_manager.get_config_file('device_info.json')
+            
+            if not device_info_path:
+                # Log detailed path information for debugging
+                debug_info = resource_manager.debug_info()
+                print(f"Device info file not found. Debug info: {debug_info}")
+                
+                # Try some fallback locations for debugging
+                fallback_paths = [
+                    'config/device_info.json',
+                    'device_info.json',
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'device_info.json'),
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'device_info.json')
+                ]
+                
+                for fallback in fallback_paths:
+                    if os.path.exists(fallback):
+                        device_info_path = Path(fallback)
+                        print(f"Found device_info.json at fallback location: {device_info_path}")
+                        break
+                
+                if not device_info_path:
+                    print("ERROR: device_info.json not found in any location")
+                    self.device_combo.addItem("Error: Device info not found", "error")
+                    return
 
-            # Check if running as a PyInstaller bundle
-            if hasattr(sys, '_MEIPASS'):
-                # Running as PyInstaller bundle
-                device_info_path = os.path.join(sys._MEIPASS, 'device_info.json')
-            else:
-                # Running from source
-                # Try config directory first
-                if os.path.exists('config/device_info.json'):
-                    device_info_path = 'config/device_info.json'
-                elif os.path.exists('device_info.json'):
-                    # Fallback for backward compatibility
-                    device_info_path = 'device_info.json'
-                else:
-                    # Try relative to main module
-                    script_dir = os.path.dirname(os.path.abspath(__file__))
-                    parent_dir = os.path.dirname(script_dir)
-                    # Check config directory first
-                    config_path = os.path.join(parent_dir, 'config', 'device_info.json')
-                    if os.path.exists(config_path):
-                        device_info_path = config_path
-                    else:
-                        # Fallback
-                        device_info_path = os.path.join(parent_dir, 'device_info.json')
+            print(f"Loading device info from: {device_info_path}")
+            
+            with open(device_info_path, 'r', encoding='utf-8') as f:
+                device_data = json.load(f)
 
-            if device_info_path and os.path.exists(device_info_path):
-                with open(device_info_path, encoding='utf-8') as f:
-                    self.device_info = json.load(f)
+            # Store device info for later use
+            self.device_info = device_data
 
-                # Sort devices by name for display
-                sorted_devices = sorted(
-                    self.device_info.items(),
-                    key=lambda x: x[1]['name']
-                )
+            # Clear existing items
+            self.device_combo.clear()
 
-                # Populate combo box
-                for device_code, device_data in sorted_devices:
-                    self.device_combo.addItem(device_data['name'], device_code)
+            # Sort devices by name for better user experience
+            sorted_devices = sorted(device_data.items(), key=lambda x: x[1].get('name', x[0]))
 
-                # Set default device (KoC - Kobo Clara)
-                default_index = self.device_combo.findData('KoC')
-                if default_index >= 0:
-                    self.device_combo.setCurrentIndex(default_index)
-            else:
-                raise FileNotFoundError(f"device_info.json not found. Searched: {device_info_path}")
+            for device_id, device_info in sorted_devices:
+                device_name = device_info.get('name', device_id)
+                self.device_combo.addItem(device_name, device_id)
+
+            # Set default device (Kobo Clara HD)
+            default_index = self.device_combo.findData("KoC")
+            if default_index != -1:
+                self.device_combo.setCurrentIndex(default_index)
+
+            print(f"Loaded {len(device_data)} device configurations")
 
         except Exception as e:
-            logging.error(f"Error loading device info: {e}")
-            self.device_combo.addItem("Error loading devices", None)
+            print(f"Error loading device info: {e}")
+            # Add error item to combo box
+            self.device_combo.clear()
+            self.device_combo.addItem(f"Error: {str(e)}", "error")
+            # Initialize empty device_info to prevent AttributeError
+            self.device_info = {}
 
     def update_options_from_device(self):
         """Update conversion options based on selected device."""
         device_code = self.device_combo.currentData()
-        if device_code and device_code in self.device_info:
+        if device_code and hasattr(self, 'device_info') and device_code in self.device_info:
             device = self.device_info[device_code]
-            options = f"-p {device_code} -f CBZ --hq -mu --cropping 1 --croppingpower 1 --gamma {device['sharpness']}"
+            options = f"-p {device_code} -f CBZ --hq -mu --cropping 1 --croppingpower 1 --gamma {device.get('sharpness', '1.8')}"
             self.options_input.setText(options)
 
     def toggle_options(self):

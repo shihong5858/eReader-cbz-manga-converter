@@ -9,22 +9,15 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-# Add KCC module path
-if getattr(sys, 'frozen', False):
-    # In packaged environment
-    if hasattr(sys, '_MEIPASS'):
-        kcc_path = Path(sys._MEIPASS) / 'kindlecomicconverter'
-    else:
-        app_dir = Path(sys.executable).parent
-        resources_dir = app_dir.parent / 'Resources'
-        kcc_path = resources_dir / 'kindlecomicconverter'
-else:
-    # Development environment
-    current_dir = Path(__file__).parent.parent.parent
-    kcc_path = current_dir / "kcc"
+# Import ResourceManager
+from ..resource_manager import get_resource_manager
 
-if kcc_path.exists() and str(kcc_path) not in sys.path:
-    sys.path.insert(0, str(kcc_path))
+# Initialize ResourceManager
+resource_manager = get_resource_manager()
+
+# Add KCC module path using ResourceManager
+if not resource_manager.add_kcc_to_path():
+    print(f"Warning: KCC path not found at {resource_manager.kcc_path}")
 
 class EPUBConverter:
     """EPUB to CBZ converter with progress tracking"""
@@ -209,52 +202,32 @@ class EPUBConverter:
 
             self.logger.info("="*30 + " KCC EXECUTION START " + "="*30)
             
-            # Set up environment for KCC
-            original_path = os.environ.get('PATH', '')
+            # Set up environment using ResourceManager
             original_cwd = os.getcwd()
+            original_path = resource_manager.setup_binary_environment()
             
-            self.logger.info(f"Original PATH: {original_path}")
             self.logger.info(f"Original CWD: {original_cwd}")
+            if original_path:
+                self.logger.info(f"Environment setup completed")
+                
+                # Check 7z binary
+                z7_path = resource_manager.get_binary_path('7z')
+                if z7_path:
+                    self.logger.info(f"7z binary found: {z7_path}")
+                    self.logger.info(f"7z file size: {z7_path.stat().st_size} bytes")
+                    self.logger.info(f"7z executable: {os.access(z7_path, os.X_OK)}")
+                else:
+                    self.logger.warning("7z binary not found")
             
             try:
-                # Add 7z binary to PATH in packaged environment
-                if getattr(sys, 'frozen', False):
-                    if hasattr(sys, '_MEIPASS'):
-                        bin_dir = sys._MEIPASS
-                    else:
-                        app_dir = os.path.dirname(sys.executable)
-                        bin_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
-                    
-                    self.logger.info(f"Packaged app detected, bin_dir: {bin_dir}")
-                    
-                    # Check if 7z exists
-                    z7_path = os.path.join(bin_dir, '7z')
-                    self.logger.info(f"Checking 7z at: {z7_path}")
-                    self.logger.info(f"7z exists: {os.path.exists(z7_path)}")
-                    if os.path.exists(z7_path):
-                        self.logger.info(f"7z file size: {os.path.getsize(z7_path)} bytes")
-                        self.logger.info(f"7z executable: {os.access(z7_path, os.X_OK)}")
-                    
-                    new_path = f"{bin_dir}:{original_path}"
-                    os.environ['PATH'] = new_path
-                    self.logger.info(f"Updated PATH: {os.environ['PATH']}")
-
-                # Switch to KCC working directory
-                if getattr(sys, 'frozen', False):
-                    if hasattr(sys, '_MEIPASS'):
-                        kcc_working_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
-                    else:
-                        app_dir = os.path.dirname(sys.executable)
-                        resources_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
-                        kcc_working_dir = os.path.join(resources_dir, 'kindlecomicconverter')
-                else:
-                    kcc_working_dir = os.path.join(original_cwd, 'kcc', 'kindlecomicconverter')
+                # Switch to KCC working directory using ResourceManager
+                kcc_working_dir = resource_manager.get_working_directory()
                 
                 self.logger.info(f"KCC working directory: {kcc_working_dir}")
-                self.logger.info(f"KCC working dir exists: {os.path.exists(kcc_working_dir)}")
+                self.logger.info(f"KCC working dir exists: {kcc_working_dir.exists()}")
                 
-                if os.path.exists(kcc_working_dir):
-                    os.chdir(kcc_working_dir)
+                if kcc_working_dir.exists():
+                    os.chdir(str(kcc_working_dir))
                     self.logger.info(f"Changed to KCC working dir: {os.getcwd()}")
                 else:
                     self.logger.warning(f"KCC working directory not found, staying in: {os.getcwd()}")
@@ -318,9 +291,6 @@ class EPUBConverter:
                 start_time = time.time()
                 
                 # Capture KCC stdout/stderr
-                import io
-                import contextlib
-                
                 captured_stdout = io.StringIO()
                 captured_stderr = io.StringIO()
                 
@@ -379,12 +349,12 @@ class EPUBConverter:
                 self.logger.info(f"Final KCC success status: {success}")
 
             finally:
-                # Restore environment
+                # Restore environment using ResourceManager
                 self.logger.info("Restoring environment...")
                 os.chdir(original_cwd)
                 self.logger.info(f"Restored CWD: {os.getcwd()}")
-                if getattr(sys, 'frozen', False):
-                    os.environ['PATH'] = original_path
+                resource_manager.restore_environment(original_path)
+                if original_path:
                     self.logger.info("Restored PATH")
 
             self.logger.info("="*30 + " KCC EXECUTION END " + "="*30)
