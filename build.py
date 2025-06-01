@@ -229,31 +229,12 @@ def get_data_files(target_platform: str) -> List[str]:
     """Get data files for PyInstaller."""
     separator = ";" if target_platform == "win32" else ":"
 
-    # Only include essential KCC files instead of the entire submodule
-    data_files = [
+    return [
         f"components{separator}components",
         f"gui{separator}gui",
+        f"kcc/kindlecomicconverter{separator}kindlecomicconverter",
         f"config/device_info.json{separator}.",
     ]
-
-    # Only include essential KCC files
-    kcc_essential = [
-        "kcc/kindlecomicconverter/__init__.py",
-        "kcc/kindlecomicconverter/comic2ebook.py",
-        "kcc/kindlecomicconverter/shared.py",
-        "kcc/kindlecomicconverter/image.py",
-        "kcc/kindlecomicconverter/cbxarchive.py",
-        "kcc/kindlecomicconverter/pdfjpgextract.py",
-    ]
-
-    # Check which essential KCC files exist and add them
-    for kcc_file in kcc_essential:
-        if Path(kcc_file).exists():
-            # Create proper data file entry
-            rel_path = "/".join(kcc_file.split("/")[1:])  # Remove 'kcc/' prefix
-            data_files.append(f"{kcc_file}{separator}kindlecomicconverter")
-
-    return data_files
 
 
 def get_build_command(target_platform: Optional[str] = None) -> List[str]:
@@ -278,43 +259,14 @@ def get_build_command(target_platform: Optional[str] = None) -> List[str]:
         "-w",  # Windowed mode (no console)
         f"--distpath={DIST_DIR}",
         f"--workpath={BUILD_DIR}/work",
-        "--strip",  # Strip debug info
-        "--optimize", "2",  # Optimize bytecode
     ])
-
-    # Exclude unnecessary modules to reduce size
-    exclude_modules = [
-        "tkinter",
-        "matplotlib",
-        "numpy",
-        "scipy",
-        "pandas",
-        "jupyter",
-        "notebook",
-        "IPython",
-        "setuptools",
-        "distutils",
-        "test",
-        "tests",
-        "unittest",
-        "email",
-        "http",
-        "urllib3",
-        "requests",
-        "pip",
-        "pkg_resources",
-    ]
-
-    for module in exclude_modules:
-        cmd.extend(["--exclude-module", module])
 
     # Platform-specific options
     if target_platform == "darwin":  # macOS
         cmd.extend([
-            "-F",  # Create one-file executable (changed from -D for smaller size)
+            "-D",  # Create directory bundle
             "-i", "assets/app.icns",
-            "-n", "eReader_CBZ_Manga_Converter_macOS",
-            "--osx-bundle-identifier", "com.ereadercbz.converter",
+            "-n", "eReader CBZ Manga Converter",
         ])
     elif target_platform == "win32":  # Windows
         cmd.extend([
@@ -341,6 +293,19 @@ def build_package(target_platform: Optional[str] = None):
 
     print_step(f"Building eReader CBZ Manga Converter for {target_platform}...")
 
+    # Set environment variables to fix numpy/OpenBLAS stack overflow issues
+    env = os.environ.copy()
+    if target_platform == "darwin":  # macOS specific fixes
+        # Limit OpenBLAS threads to prevent stack overflow
+        # But allow limited parallelism to avoid KCC multiprocessing deadlocks
+        env['OPENBLAS_NUM_THREADS'] = '2'
+        env['MKL_NUM_THREADS'] = '2'
+        env['NUMEXPR_NUM_THREADS'] = '2'
+        env['OMP_NUM_THREADS'] = '2'
+        # Use single-threaded BLAS to avoid arm64 stack issues
+        env['VECLIB_MAXIMUM_THREADS'] = '2'
+        print("[INFO] Set limited thread limits to prevent OpenBLAS stack overflow on ARM64")
+
     # Create build directories
     BUILD_DIR.mkdir(exist_ok=True)
     DIST_DIR.mkdir(exist_ok=True)
@@ -356,9 +321,31 @@ def build_package(target_platform: Optional[str] = None):
             check=True,
             capture_output=True,
             text=True,
-            cwd=Path.cwd()
+            cwd=Path.cwd(),
+            env=env  # Pass modified environment
         )
         print_success("Build completed successfully!")
+
+        # macOS specific post-build cleanup
+        if target_platform == "darwin":
+            # Ensure only .app bundle exists in dist/
+            app_name = "eReader CBZ Manga Converter.app"
+            app_path = DIST_DIR / app_name
+            
+            if app_path.exists():
+                print(f"  [INFO] Found .app bundle: {app_name}")
+                
+                # Remove any other files/folders that might have been created
+                for item in DIST_DIR.iterdir():
+                    if item.name != app_name and item.name != ".DS_Store":
+                        if item.is_dir():
+                            shutil.rmtree(item)
+                            print(f"  [INFO] Removed extra directory: {item.name}")
+                        else:
+                            item.unlink()
+                            print(f"  [INFO] Removed extra file: {item.name}")
+            else:
+                print(f"  [WARNING] Expected .app bundle not found: {app_name}")
 
         # Move spec file to our organized location
         spec_files = list(Path(".").glob("*.spec"))
@@ -383,24 +370,77 @@ def build_package(target_platform: Optional[str] = None):
 
 
 def create_macos_dmg():
-    """Create DMG installer for macOS."""
-    print_step("Creating macOS DMG installer...")
-
-    installer_config = Path("config/installer.json")
-    if not installer_config.exists():
-        print("  [WARNING] config/installer.json not found, skipping DMG creation")
+    """Create ZIP installer for macOS (more reliable than DMG)."""
+    print_step("Creating macOS ZIP installer...")
+    
+    app_name = "eReader CBZ Manga Converter"
+    app_path = DIST_DIR / f"{app_name}.app"
+    
+    if not app_path.exists():
+        print_error(f"{app_path} not found")
         return
 
+    # Check if appdmg is available
+    if shutil.which("appdmg"):
+        print("[INFO] Attempting to create DMG with appdmg...")
+        installer_config = Path("config/installer.json")
+        
+        if installer_config.exists():
+            try:
+                dmg_name = f"eReader_CBZ_Manga_Converter_macOS_arm_1.2.0.dmg"
+                dmg_path = DIST_DIR / dmg_name
+                
+                print(f"[INFO] Running appdmg from {Path.cwd()}")
+                print(f"[INFO] Config: {installer_config.absolute()}")
+                print(f"[INFO] Output: {dmg_path.absolute()}")
+                
+                dmg_cmd = ["appdmg", str(installer_config.absolute()), str(dmg_path.absolute())]
+                result = subprocess.run(dmg_cmd, check=True, capture_output=True, text=True, cwd=Path.cwd())
+                
+                print_success(f"Created DMG: {dmg_name}")
+                dmg_size_mb = dmg_path.stat().st_size / (1024 * 1024)
+                print(f"[INFO] DMG size: {dmg_size_mb:.1f} MB")
+                
+                # Show appdmg output for debugging
+                if result.stdout:
+                    print(f"[INFO] appdmg output: {result.stdout}")
+                    
+                return
+                
+            except subprocess.CalledProcessError as e:
+                print_error(f"DMG creation failed: {e}")
+                if e.stderr:
+                    print(f"[ERROR] stderr: {e.stderr}")
+                if e.stdout:
+                    print(f"[INFO] stdout: {e.stdout}")
+                print("[INFO] Falling back to ZIP creation...")
+        else:
+            print("[WARNING] config/installer.json not found, falling back to ZIP creation")
+    else:
+        print("[INFO] appdmg not available, creating ZIP instead...")
+    
+    # Fallback to ZIP creation
+    zip_name = f"eReader_CBZ_Manga_Converter_macOS_arm_1.2.0.zip"
+    zip_path = DIST_DIR / zip_name
+    
     try:
-        dmg_name = f"eReader_CBZ_Manga_Converter_macOS_{platform.processor()}_1.1.0.dmg"
-        dmg_path = DIST_DIR / dmg_name
-
-        dmg_cmd = ["appdmg", str(installer_config), str(dmg_path)]
-        subprocess.run(dmg_cmd, check=True)
-        print_success(f"Created DMG: {dmg_name}")
-
-    except subprocess.CalledProcessError as e:
-        print_error(f"DMG creation failed: {e}")
+        import zipfile
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
+            for root, dirs, files in os.walk(app_path):
+                for file in files:
+                    file_path = Path(root) / file
+                    arc_name = file_path.relative_to(DIST_DIR)
+                    zipf.write(file_path, arc_name)
+        
+        print_success(f"Created ZIP: {zip_name}")
+        
+        # Get file size
+        size_mb = zip_path.stat().st_size / (1024 * 1024)
+        print(f"[INFO] ZIP size: {size_mb:.1f} MB")
+        
+    except Exception as e:
+        print_error(f"ZIP creation failed: {e}")
 
 
 def setup_kcc():

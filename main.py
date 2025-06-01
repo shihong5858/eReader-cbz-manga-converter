@@ -3,6 +3,20 @@ import multiprocessing
 import os
 import sys
 
+# Fix numpy/OpenBLAS stack overflow on macOS ARM64 BEFORE importing any modules
+if sys.platform == "darwin":
+    # Limit OpenBLAS threads to prevent stack overflow in packaged app
+    # But allow limited parallelism to avoid KCC multiprocessing deadlocks
+    os.environ['OPENBLAS_NUM_THREADS'] = '2'
+    os.environ['MKL_NUM_THREADS'] = '2'
+    os.environ['NUMEXPR_NUM_THREADS'] = '2' 
+    os.environ['OMP_NUM_THREADS'] = '2'
+    os.environ['VECLIB_MAXIMUM_THREADS'] = '2'
+    # Also set numpy specific thread controls
+    os.environ['NPY_NUM_BUILD_JOBS'] = '2'
+    # Set multiprocessing method to avoid issues in packaged app
+    os.environ['MP_START_METHOD'] = 'spawn'
+
 from PySide6.QtWidgets import QApplication
 
 from components.conversion import EPUBConverter
@@ -15,6 +29,13 @@ sys.path.append(kcc_dir)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def main():
+    # Set multiprocessing start method for KCC compatibility
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
+    
     # Check if this is a multiprocessing child process
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:

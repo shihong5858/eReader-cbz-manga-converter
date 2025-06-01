@@ -39,13 +39,19 @@ jobs:
             artifact-name: macos-intel-build
             build-command: "python build.py build-mac"
             setup-deps: |
-              npm install -g appdmg || echo "appdmg installation failed, DMG creation will be skipped"
+              echo "Installing appdmg for DMG creation..."
+              npm install -g appdmg
+              echo "Verifying appdmg installation..."
+              appdmg --version || echo "appdmg installation verification failed"
           - os: macos-latest
             platform: macos-arm
             artifact-name: macos-arm-build
             build-command: "python build.py build-mac"
             setup-deps: |
-              npm install -g appdmg || echo "appdmg installation failed, DMG creation will be skipped"
+              echo "Installing appdmg for DMG creation..."
+              npm install -g appdmg
+              echo "Verifying appdmg installation..."
+              appdmg --version || echo "appdmg installation verification failed"
     
     runs-on: ${{ matrix.os }}
     
@@ -70,7 +76,14 @@ jobs:
       - name: Install system dependencies
         if: matrix.setup-deps != ''
         run: ${{ matrix.setup-deps }}
-        continue-on-error: true
+
+      - name: Verify appdmg installation (macOS only)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          echo "Checking appdmg installation..."
+          which appdmg || (echo "ERROR: appdmg not found in PATH" && exit 1)
+          appdmg --version || (echo "ERROR: appdmg not working" && exit 1)
+          echo "✅ appdmg is ready"
 
       - name: Setup KCC environment
         run: |
@@ -106,15 +119,21 @@ jobs:
         if: startsWith(matrix.platform, 'macos')
         run: |
           ls -la dist/
+          echo "Checking .app bundle size:"
+          du -sh dist/*.app || echo "No .app found"
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
           path: |
-            dist/*
-            !dist/build
-            !dist/work
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*_1.*.*.exe
+            dist/*_1.*.*.dmg
+            dist/*_1.*.*.zip
+          if-no-files-found: warn
           retention-days: 7
           
   release:
