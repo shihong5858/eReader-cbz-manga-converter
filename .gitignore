@@ -52,3 +52,6 @@ cbz-manga-converter-1/
 
 # Cache files
 *.cache
+
+# PyInstaller generated files
+*.spec
