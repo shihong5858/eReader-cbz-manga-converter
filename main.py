@@ -2,6 +2,7 @@ import logging
 import multiprocessing
 import os
 import sys
+import datetime
 
 # Fix working directory for PyInstaller
 def fix_working_directory():
@@ -14,6 +15,39 @@ def fix_working_directory():
 
 # Fix working directory immediately
 fix_working_directory()
+
+# Setup detailed logging to file
+def setup_logging():
+    """Setup logging to both console and file for debugging"""
+    # Create log file on Desktop
+    desktop_path = os.path.expanduser("~/Desktop")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"eReader_CBZ_Debug_{timestamp}.log"
+    log_file_path = os.path.join(desktop_path, log_filename)
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file_path, encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("="*60)
+    logger.info("eReader CBZ Manga Converter - Debug Session Started")
+    logger.info(f"Log file: {log_file_path}")
+    logger.info(f"Python frozen: {getattr(sys, 'frozen', False)}")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    logger.info(f"sys.executable: {sys.executable}")
+    if hasattr(sys, '_MEIPASS'):
+        logger.info(f"sys._MEIPASS: {sys._MEIPASS}")
+    logger.info("="*60)
+
+# Setup logging immediately
+setup_logging()
 
 # Fix numpy/OpenBLAS stack overflow on macOS ARM64 BEFORE importing any modules
 if sys.platform == "darwin":
@@ -34,6 +68,8 @@ from PySide6.QtWidgets import QApplication
 from components.conversion import EPUBConverter
 from gui.mainwindow import MainWindow
 
+logger = logging.getLogger(__name__)
+
 # Add KCC directory to Python path
 if getattr(sys, 'frozen', False):
     # In packaged environment
@@ -47,10 +83,14 @@ else:
     # Development environment
     kcc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kcc')
 
+logger.info(f"KCC directory path: {kcc_dir}")
+logger.info(f"KCC directory exists: {os.path.exists(kcc_dir)}")
+
 if os.path.exists(kcc_dir):
     sys.path.insert(0, kcc_dir)
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger.info(f"Added KCC to sys.path: {kcc_dir}")
+else:
+    logger.error(f"KCC directory not found: {kcc_dir}")
 
 def main():
     # Set multiprocessing start method for KCC compatibility

@@ -171,20 +171,27 @@ class EPUBConverter:
     def _create_cbz(self, ordered_images_dir, input_file, output_directory, progress_callback, status_callback):
         """Create CBZ file using KCC"""
         try:
+            self.logger.info("="*50)
+            self.logger.info("Starting _create_cbz method")
+            
             # Create output filename
             output_file = os.path.join(
                 output_directory,
                 os.path.splitext(os.path.basename(input_file))[0] + '.cbz'
             )
+            self.logger.info(f"Output file: {output_file}")
 
             # Create ZIP file with ordered images
             ordered_zip_path = os.path.join(os.path.dirname(ordered_images_dir), 'ordered_images.zip')
+            self.logger.info(f"Creating temporary ZIP: {ordered_zip_path}")
+            
             with zipfile.ZipFile(ordered_zip_path, 'w', zipfile.ZIP_DEFLATED) as ordered_zip:
                 image_files = sorted([
                     f for f in os.listdir(ordered_images_dir)
                     if f.endswith(('.jpg', '.jpeg', '.png'))
                 ])
 
+                self.logger.info(f"Found {len(image_files)} image files to package")
                 total_files = len(image_files)
                 for i, filename in enumerate(image_files, 1):
                     img_path = os.path.join(ordered_images_dir, filename)
@@ -193,14 +200,21 @@ class EPUBConverter:
                         zip_progress = 40 + (10 * i / total_files)
                         progress_callback(int(zip_progress))
 
+            self.logger.info(f"ZIP creation completed: {os.path.getsize(ordered_zip_path)} bytes")
+
             if status_callback:
                 status_callback("Running KCC conversion...")
             if progress_callback:
                 progress_callback(50)
 
+            self.logger.info("="*30 + " KCC EXECUTION START " + "="*30)
+            
             # Set up environment for KCC
             original_path = os.environ.get('PATH', '')
             original_cwd = os.getcwd()
+            
+            self.logger.info(f"Original PATH: {original_path}")
+            self.logger.info(f"Original CWD: {original_cwd}")
             
             try:
                 # Add 7z binary to PATH in packaged environment
@@ -211,8 +225,19 @@ class EPUBConverter:
                         app_dir = os.path.dirname(sys.executable)
                         bin_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
                     
+                    self.logger.info(f"Packaged app detected, bin_dir: {bin_dir}")
+                    
+                    # Check if 7z exists
+                    z7_path = os.path.join(bin_dir, '7z')
+                    self.logger.info(f"Checking 7z at: {z7_path}")
+                    self.logger.info(f"7z exists: {os.path.exists(z7_path)}")
+                    if os.path.exists(z7_path):
+                        self.logger.info(f"7z file size: {os.path.getsize(z7_path)} bytes")
+                        self.logger.info(f"7z executable: {os.access(z7_path, os.X_OK)}")
+                    
                     new_path = f"{bin_dir}:{original_path}"
                     os.environ['PATH'] = new_path
+                    self.logger.info(f"Updated PATH: {os.environ['PATH']}")
 
                 # Switch to KCC working directory
                 if getattr(sys, 'frozen', False):
@@ -225,8 +250,14 @@ class EPUBConverter:
                 else:
                     kcc_working_dir = os.path.join(original_cwd, 'kcc', 'kindlecomicconverter')
                 
+                self.logger.info(f"KCC working directory: {kcc_working_dir}")
+                self.logger.info(f"KCC working dir exists: {os.path.exists(kcc_working_dir)}")
+                
                 if os.path.exists(kcc_working_dir):
                     os.chdir(kcc_working_dir)
+                    self.logger.info(f"Changed to KCC working dir: {os.getcwd()}")
+                else:
+                    self.logger.warning(f"KCC working directory not found, staying in: {os.getcwd()}")
 
                 # Run KCC conversion
                 kcc_args = [
@@ -241,25 +272,141 @@ class EPUBConverter:
                     '-o', output_file
                 ]
 
-                from kindlecomicconverter.comic2ebook import main as kcc_main
+                self.logger.info(f"KCC arguments: {kcc_args}")
+                self.logger.info("Attempting to import KCC...")
+                
                 try:
-                    success = kcc_main(kcc_args) == 0
-                except SystemExit as e:
-                    success = e.code == 0
+                    from kindlecomicconverter.comic2ebook import main as kcc_main
+                    self.logger.info("KCC import successful")
+                except ImportError as e:
+                    self.logger.error(f"KCC import failed: {e}")
+                    self.logger.error(f"Current sys.path: {sys.path}")
+                    raise
+
+                # Check if 7z command is available
+                self.logger.info("Checking 7z command availability...")
+                import subprocess
+                try:
+                    result = subprocess.run(['which', '7z'], capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        self.logger.info(f"7z command found at: {result.stdout.strip()}")
+                    else:
+                        self.logger.warning("7z command not found with 'which'")
+                    
+                    # Also try running 7z directly
+                    result = subprocess.run(['7z'], capture_output=True, text=True, timeout=5)
+                    self.logger.info(f"7z test run exit code: {result.returncode}")
+                    if result.stdout:
+                        self.logger.info(f"7z stdout: {result.stdout[:200]}...")
+                    if result.stderr:
+                        self.logger.info(f"7z stderr: {result.stderr[:200]}...")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error checking 7z: {e}")
+
+                # Log current environment
+                self.logger.info(f"Current PATH: {os.environ.get('PATH', 'NOT_SET')}")
+                self.logger.info(f"Current working dir: {os.getcwd()}")
+                self.logger.info(f"Input ZIP file: {ordered_zip_path}")
+                self.logger.info(f"Input ZIP exists: {os.path.exists(ordered_zip_path)}")
+                self.logger.info(f"Output file target: {output_file}")
+                self.logger.info(f"Output dir exists: {os.path.exists(os.path.dirname(output_file))}")
+                self.logger.info(f"Output dir writable: {os.access(os.path.dirname(output_file), os.W_OK)}")
+
+                self.logger.info("Starting KCC execution...")
+                import time
+                start_time = time.time()
+                
+                # Capture KCC stdout/stderr
+                import io
+                import contextlib
+                
+                captured_stdout = io.StringIO()
+                captured_stderr = io.StringIO()
+                
+                # Save original stdout/stderr
+                old_stdout = sys.stdout
+                old_stderr = sys.stderr
+                
+                try:
+                    # Redirect stdout/stderr to capture KCC output
+                    sys.stdout = captured_stdout
+                    sys.stderr = captured_stderr
+                    
+                    self.logger.info("Executing KCC with redirected output...")
+                    
+                    try:
+                        kcc_result = kcc_main(kcc_args)
+                        execution_time = time.time() - start_time
+                        self.logger.info(f"KCC completed in {execution_time:.2f}s with result: {kcc_result}")
+                        success = kcc_result == 0
+                    except SystemExit as e:
+                        execution_time = time.time() - start_time
+                        self.logger.info(f"KCC SystemExit in {execution_time:.2f}s with code: {e.code}")
+                        success = e.code == 0
+                    except Exception as e:
+                        execution_time = time.time() - start_time
+                        self.logger.error(f"KCC exception in {execution_time:.2f}s: {e}")
+                        import traceback
+                        self.logger.error(f"Traceback: {traceback.format_exc()}")
+                        success = False
+                
+                finally:
+                    # Restore stdout/stderr
+                    sys.stdout = old_stdout
+                    sys.stderr = old_stderr
+                    
+                    # Log captured output
+                    stdout_content = captured_stdout.getvalue()
+                    stderr_content = captured_stderr.getvalue()
+                    
+                    if stdout_content:
+                        self.logger.info("KCC STDOUT:")
+                        for line in stdout_content.strip().split('\n'):
+                            if line.strip():
+                                self.logger.info(f"  {line}")
+                    else:
+                        self.logger.info("KCC STDOUT: (empty)")
+                    
+                    if stderr_content:
+                        self.logger.error("KCC STDERR:")
+                        for line in stderr_content.strip().split('\n'):
+                            if line.strip():
+                                self.logger.error(f"  {line}")
+                    else:
+                        self.logger.info("KCC STDERR: (empty)")
+
+                self.logger.info(f"Final KCC success status: {success}")
 
             finally:
                 # Restore environment
+                self.logger.info("Restoring environment...")
                 os.chdir(original_cwd)
+                self.logger.info(f"Restored CWD: {os.getcwd()}")
                 if getattr(sys, 'frozen', False):
                     os.environ['PATH'] = original_path
+                    self.logger.info("Restored PATH")
+
+            self.logger.info("="*30 + " KCC EXECUTION END " + "="*30)
 
             # Clean up temporary zip file
+            self.logger.info(f"Cleaning up temporary ZIP: {ordered_zip_path}")
             os.remove(ordered_zip_path)
 
+            # Check if output file was created
+            if os.path.exists(output_file):
+                output_size = os.path.getsize(output_file)
+                self.logger.info(f"Output CBZ created successfully: {output_size} bytes")
+            else:
+                self.logger.error(f"Output CBZ file not created: {output_file}")
+
+            self.logger.info(f"_create_cbz returning success: {success}")
             return success
 
         except Exception as e:
-            self.logger.error(f"Error creating CBZ: {str(e)}")
+            self.logger.error(f"Error in _create_cbz: {str(e)}")
+            import traceback
+            self.logger.error(f"Full traceback: {traceback.format_exc()}")
             return False
 
     def _process_manifest(self, opf_root, ns, opf_path, temp_dir):
