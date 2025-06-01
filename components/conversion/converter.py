@@ -7,7 +7,13 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+from pathlib import Path
 
+# 添加KCC模块路径
+current_dir = Path(__file__).parent.parent.parent
+kcc_path = current_dir / "kcc"
+if kcc_path.exists() and str(kcc_path) not in sys.path:
+    sys.path.insert(0, str(kcc_path))
 
 class EPUBConverter:
     """EPUB to CBZ converter with progress tracking"""

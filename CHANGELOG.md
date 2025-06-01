@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0] - 2025-06-01
+
+- Cleaned up dependencies and reduced repository size
+- KCC integration migrated to Git Submodule
+- Unified KCC setup in build.py
+- Fixed GitHub Actions runner issues
+
 ## [1.1.0] - 2025-06-01
 
 ### Added

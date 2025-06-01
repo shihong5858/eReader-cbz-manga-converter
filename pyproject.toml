@@ -55,7 +55,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["components*", "gui*", "kcc*"]
+include = ["components*", "gui*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.icns", "*.png"]

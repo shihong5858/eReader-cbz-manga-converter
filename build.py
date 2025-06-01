@@ -11,6 +11,7 @@ Unified script for all development tasks:
     python build.py clean        # Clean build artifacts
     python build.py dev          # Install in development mode
     python build.py check        # Check code quality
+    python build.py kcc          # Setup KCC environment
 """
 
 import os
@@ -45,6 +46,17 @@ def print_success(message: str):
 def print_error(message: str):
     """Print an error message."""
     print(f"[ERROR] {message}")
+
+
+def run_command(cmd, cwd=None):
+    """Run command and handle errors"""
+    try:
+        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=True)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        print_error(f"Command failed: {' '.join(cmd)}")
+        print(f"Error: {e.stderr}")
+        return None
 
 
 def run_app():
@@ -343,6 +355,78 @@ def create_macos_dmg():
         print_error(f"DMG creation failed: {e}")
 
 
+def setup_kcc():
+    """Setup KCC environment"""
+    print_step("Setting up KCC (KindleComicConverter) environment")
+
+    # Check if kcc submodule exists
+    kcc_path = Path("kcc")
+    if not kcc_path.exists():
+        print_error("KCC submodule not found. Please run:")
+        print("   git submodule update --init --recursive")
+        return False
+
+    # Check kcc directory content
+    if not (kcc_path / "kindlecomicconverter").exists():
+        print_error("KCC submodule content incomplete. Please update submodule:")
+        print("   git submodule update --init --recursive")
+        return False
+
+    print("[INFO] KCC submodule correctly configured")
+
+    # Install KCC dependencies
+    kcc_requirements = kcc_path / "requirements.txt"
+    if kcc_requirements.exists():
+        print("[INFO] Installing KCC dependencies...")
+        output = run_command([sys.executable, "-m", "pip", "install", "-r", str(kcc_requirements)])
+        if output is not None:
+            print("[INFO] KCC dependencies installed successfully")
+        else:
+            print("[WARNING] KCC dependencies installation failed, please check manually")
+
+    # Configure Python path (at runtime)
+    print("[INFO] Configuring Python path...")
+
+    # Check if KCC module can be imported
+    try:
+        sys.path.insert(0, str(kcc_path.absolute()))
+        import kindlecomicconverter
+        print("[INFO] KCC module import successful")
+        print(f"[INFO] Version: {getattr(kindlecomicconverter, '__version__', 'unknown')}")
+    except ImportError as e:
+        print_error(f"KCC module import failed: {e}")
+        return False
+
+    print_success("KCC setup completed")
+    print("[INFO] Usage: sys.path.insert(0, 'kcc') then import KCC modules")
+    print("[INFO] Example: from kindlecomicconverter.comic2ebook import main as kcc_main")
+
+    return True
+
+
+def check_system_requirements():
+    """Check system requirements"""
+    print("[INFO] Checking system requirements...")
+
+    # Check Python version
+    # Note: Project requires Python 3.8+ as specified in pyproject.toml
+    print(f"[INFO] Python version: {sys.version}")
+
+    # Check optional dependencies
+    optional_tools = {
+        "7z": "7-Zip compression tool (recommended for more format support)",
+        "kindlegen": "KindleGen (for MOBI format generation)"
+    }
+
+    for tool, description in optional_tools.items():
+        if subprocess.run(["which", tool], capture_output=True).returncode == 0:
+            print(f"[INFO] {tool}: installed")
+        else:
+            print(f"[WARNING] {tool}: not installed - {description}")
+
+    return True
+
+
 def main():
     """Main entry point."""
     if len(sys.argv) < 2:
@@ -361,11 +445,13 @@ Commands:
     clean        Clean build artifacts
     dev          Install in development mode
     check        Check code quality
+    kcc          Setup KCC environment
 
 Examples:
     python build.py run
     python build.py build
     python build.py clean
+    python build.py kcc
         """)
         return
 
@@ -387,11 +473,19 @@ Examples:
         install_dev()
     elif command == "check":
         check_quality()
+    elif command == "kcc":
+        if not check_system_requirements():
+            sys.exit(1)
+        if setup_kcc():
+            print_success("KCC environment setup completed!")
+        else:
+            print_error("KCC setup failed, please check error messages")
+            sys.exit(1)
     else:
         print(f"[ERROR] Unknown command: {command}")
         print("Run 'python build.py' for help")
 
-    if command != "run":  # Don't show completion message for run command
+    if command not in ["run", "kcc"]:  # Don't show completion message for run and kcc commands
         print_success("Operation completed!")
 
 

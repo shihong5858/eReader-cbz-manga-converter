@@ -25,3 +25,10 @@ dist/
 # Test input/output (pattern for user-specified output directories)
 input/
 output/*.egg-info/
+
+# KCC submodule - ignore build and cache files
+kcc/__pycache__/
+kcc/build/
+kcc/dist/
+kcc/.pyinstaller/
+kcc/*.spec
