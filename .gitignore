@@ -24,4 +24,4 @@ dist/
 
 # Test input/output (pattern for user-specified output directories)
 input/
-output/
+output/*.egg-info/
