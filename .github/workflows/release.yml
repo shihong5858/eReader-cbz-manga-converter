@@ -12,6 +12,10 @@ name: Build and Release
       - 'LICENSE'
       - '.gitignore'
 
+permissions:
+  contents: write    # Required for creating releases and uploading assets
+  actions: read      # Required for downloading artifacts
+
 jobs:
   build:
     strategy:
@@ -117,6 +121,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write  # Required for creating releases
+      actions: read    # Required for downloading artifacts
     
     steps:
       - name: Checkout code
