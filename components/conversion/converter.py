@@ -9,9 +9,20 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-# 添加KCC模块路径
-current_dir = Path(__file__).parent.parent.parent
-kcc_path = current_dir / "kcc"
+# Add KCC module path
+if getattr(sys, 'frozen', False):
+    # In packaged environment
+    if hasattr(sys, '_MEIPASS'):
+        kcc_path = Path(sys._MEIPASS) / 'kindlecomicconverter'
+    else:
+        app_dir = Path(sys.executable).parent
+        resources_dir = app_dir.parent / 'Resources'
+        kcc_path = resources_dir / 'kindlecomicconverter'
+else:
+    # Development environment
+    current_dir = Path(__file__).parent.parent.parent
+    kcc_path = current_dir / "kcc"
+
 if kcc_path.exists() and str(kcc_path) not in sys.path:
     sys.path.insert(0, str(kcc_path))
 
@@ -179,7 +190,6 @@ class EPUBConverter:
                     img_path = os.path.join(ordered_images_dir, filename)
                     ordered_zip.write(img_path, filename)
                     if progress_callback:
-                        # Update progress within the ZIP creation phase (40-50%)
                         zip_progress = 40 + (10 * i / total_files)
                         progress_callback(int(zip_progress))
 
@@ -188,62 +198,60 @@ class EPUBConverter:
             if progress_callback:
                 progress_callback(50)
 
-            # Run KCC conversion
-            kcc_args = [
-                '-p', 'KoC',
-                '-f', 'CBZ',
-                '--hq',
-                '-mu',
-                '--cropping', '1',
-                '--croppingpower', '1',
-                '--gamma', '1.6',
-                ordered_zip_path,
-                '-o', output_file
-            ]
-
-            # Create a simple output capture class
-            class OutputCapture(io.TextIOBase):
-                def write(self, text):
-                    if text.strip():  # Only process non-empty text
-                        if "Preparing source images" in text:
-                            if status_callback:
-                                status_callback("Preparing source images")
-                            if progress_callback:
-                                progress_callback(55)
-                        elif "Checking images" in text:
-                            if status_callback:
-                                status_callback("Checking images")
-                            if progress_callback:
-                                progress_callback(60)
-                        elif "Processing images" in text:
-                            if status_callback:
-                                status_callback("Processing KCC images")
-                            if progress_callback:
-                                progress_callback(65)
-                        elif "Creating CBZ file" in text:
-                            if status_callback:
-                                status_callback("Creating CBZ file")
-                            if progress_callback:
-                                progress_callback(85)
-                        elif "Optimizing" in text:
-                            if progress_callback:
-                                progress_callback(95)
-                    return len(text)
-
-                def flush(self):
-                    pass
-
-            # Save original standard output
-            old_stdout = sys.stdout
-            # Set new standard output
-            sys.stdout = OutputCapture()
-
+            # Set up environment for KCC
+            original_path = os.environ.get('PATH', '')
+            original_cwd = os.getcwd()
+            
             try:
+                # Add 7z binary to PATH in packaged environment
+                if getattr(sys, 'frozen', False):
+                    if hasattr(sys, '_MEIPASS'):
+                        bin_dir = sys._MEIPASS
+                    else:
+                        app_dir = os.path.dirname(sys.executable)
+                        bin_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
+                    
+                    new_path = f"{bin_dir}:{original_path}"
+                    os.environ['PATH'] = new_path
+
+                # Switch to KCC working directory
+                if getattr(sys, 'frozen', False):
+                    if hasattr(sys, '_MEIPASS'):
+                        kcc_working_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
+                    else:
+                        app_dir = os.path.dirname(sys.executable)
+                        resources_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
+                        kcc_working_dir = os.path.join(resources_dir, 'kindlecomicconverter')
+                else:
+                    kcc_working_dir = os.path.join(original_cwd, 'kcc', 'kindlecomicconverter')
+                
+                if os.path.exists(kcc_working_dir):
+                    os.chdir(kcc_working_dir)
+
+                # Run KCC conversion
+                kcc_args = [
+                    '-p', 'KoC',
+                    '-f', 'CBZ',
+                    '--hq',
+                    '-mu',
+                    '--cropping', '1',
+                    '--croppingpower', '1',
+                    '--gamma', '1.6',
+                    ordered_zip_path,
+                    '-o', output_file
+                ]
+
                 from kindlecomicconverter.comic2ebook import main as kcc_main
-                success = kcc_main(kcc_args) == 0
+                try:
+                    success = kcc_main(kcc_args) == 0
+                except SystemExit as e:
+                    success = e.code == 0
+
             finally:
-                # Restore standard output
-                sys.stdout = old_stdout
+                # Restore environment
+                os.chdir(original_cwd)
+                if getattr(sys, 'frozen', False):
+                    os.environ['PATH'] = original_path
 
             # Clean up temporary zip file
             os.remove(ordered_zip_path)

@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.1] - 2025-06-02
+
+- Fixed 50% crash issue during conversion process in macOS app
+
 ## [1.2.0] - 2025-06-01
 
 - Cleaned up dependencies and reduced repository size

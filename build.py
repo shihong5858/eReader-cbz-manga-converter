@@ -229,12 +229,24 @@ def get_data_files(target_platform: str) -> List[str]:
     """Get data files for PyInstaller."""
     separator = ";" if target_platform == "win32" else ":"
 
-    return [
+    data_files = [
         f"components{separator}components",
         f"gui{separator}gui",
         f"kcc/kindlecomicconverter{separator}kindlecomicconverter",
         f"config/device_info.json{separator}.",
     ]
+
+    # Add 7z binary for KCC support
+    z7_locations = ["/opt/homebrew/bin/7z", "/usr/local/bin/7z", "/usr/bin/7z"]
+    for z7_path in z7_locations:
+        if os.path.exists(z7_path):
+            data_files.append(f"{z7_path}{separator}.")
+            print(f"[INFO] Adding 7z binary: {z7_path}")
+            break
+    else:
+        print("[WARNING] 7z binary not found, KCC may fail")
+
+    return data_files
 
 
 def get_build_command(target_platform: Optional[str] = None) -> List[str]:

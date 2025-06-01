@@ -3,6 +3,18 @@ import multiprocessing
 import os
 import sys
 
+# Fix working directory for PyInstaller
+def fix_working_directory():
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            app_dir = sys._MEIPASS
+        else:
+            app_dir = os.path.dirname(sys.executable)
+        os.chdir(app_dir)
+
+# Fix working directory immediately
+fix_working_directory()
+
 # Fix numpy/OpenBLAS stack overflow on macOS ARM64 BEFORE importing any modules
 if sys.platform == "darwin":
     # Limit OpenBLAS threads to prevent stack overflow in packaged app
@@ -23,8 +35,20 @@ from components.conversion import EPUBConverter
 from gui.mainwindow import MainWindow
 
 # Add KCC directory to Python path
-kcc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kcc')
-sys.path.append(kcc_dir)
+if getattr(sys, 'frozen', False):
+    # In packaged environment
+    if hasattr(sys, '_MEIPASS'):
+        kcc_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
+    else:
+        app_dir = os.path.dirname(sys.executable)
+        resources_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
+        kcc_dir = os.path.join(resources_dir, 'kindlecomicconverter')
+else:
+    # Development environment
+    kcc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kcc')
+
+if os.path.exists(kcc_dir):
+    sys.path.insert(0, kcc_dir)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
