@@ -229,12 +229,31 @@ def get_data_files(target_platform: str) -> List[str]:
     """Get data files for PyInstaller."""
     separator = ";" if target_platform == "win32" else ":"
 
-    return [
+    # Only include essential KCC files instead of the entire submodule
+    data_files = [
         f"components{separator}components",
         f"gui{separator}gui",
-        f"kcc/kindlecomicconverter{separator}kindlecomicconverter",
         f"config/device_info.json{separator}.",
     ]
+
+    # Only include essential KCC files
+    kcc_essential = [
+        "kcc/kindlecomicconverter/__init__.py",
+        "kcc/kindlecomicconverter/comic2ebook.py",
+        "kcc/kindlecomicconverter/shared.py",
+        "kcc/kindlecomicconverter/image.py",
+        "kcc/kindlecomicconverter/cbxarchive.py",
+        "kcc/kindlecomicconverter/pdfjpgextract.py",
+    ]
+
+    # Check which essential KCC files exist and add them
+    for kcc_file in kcc_essential:
+        if Path(kcc_file).exists():
+            # Create proper data file entry
+            rel_path = "/".join(kcc_file.split("/")[1:])  # Remove 'kcc/' prefix
+            data_files.append(f"{kcc_file}{separator}kindlecomicconverter")
+
+    return data_files
 
 
 def get_build_command(target_platform: Optional[str] = None) -> List[str]:
@@ -259,14 +278,43 @@ def get_build_command(target_platform: Optional[str] = None) -> List[str]:
         "-w",  # Windowed mode (no console)
         f"--distpath={DIST_DIR}",
         f"--workpath={BUILD_DIR}/work",
+        "--strip",  # Strip debug info
+        "--optimize", "2",  # Optimize bytecode
     ])
+
+    # Exclude unnecessary modules to reduce size
+    exclude_modules = [
+        "tkinter",
+        "matplotlib",
+        "numpy",
+        "scipy",
+        "pandas",
+        "jupyter",
+        "notebook",
+        "IPython",
+        "setuptools",
+        "distutils",
+        "test",
+        "tests",
+        "unittest",
+        "email",
+        "http",
+        "urllib3",
+        "requests",
+        "pip",
+        "pkg_resources",
+    ]
+
+    for module in exclude_modules:
+        cmd.extend(["--exclude-module", module])
 
     # Platform-specific options
     if target_platform == "darwin":  # macOS
         cmd.extend([
-            "-D",  # Create directory bundle
+            "-F",  # Create one-file executable (changed from -D for smaller size)
             "-i", "assets/app.icns",
-            "-n", "eReader CBZ Manga Converter",
+            "-n", "eReader_CBZ_Manga_Converter_macOS",
+            "--osx-bundle-identifier", "com.ereadercbz.converter",
         ])
     elif target_platform == "win32":  # Windows
         cmd.extend([
