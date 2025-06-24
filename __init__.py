@@ -7,7 +7,7 @@ def _get_version():
     """Get version from pyproject.toml"""
     toml_file = Path(__file__).parent / "pyproject.toml"
     if toml_file.exists():
-        content = toml_file.read_text()
+        content = toml_file.read_text(encoding='utf-8')
         # Look for version = "x.y.z" in [project] section
         match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
         if match:
