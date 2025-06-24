@@ -46,28 +46,40 @@ if sys.platform == "darwin":
 
 # Add KCC directory to Python path
 if getattr(sys, 'frozen', False):
+    logger.info("Running in packaged/frozen environment")
     # In packaged environment
     if hasattr(sys, '_MEIPASS'):
+        logger.info(f"PyInstaller environment detected: {sys._MEIPASS}")
         kcc_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
         # Add 7z to PATH for KCC support in packaged environment
         z7_path = os.path.join(sys._MEIPASS, '7z')
+        logger.info(f"Looking for 7z at: {z7_path}")
         if os.path.exists(z7_path):
-            os.environ['PATH'] = os.path.dirname(z7_path) + os.pathsep + os.environ.get('PATH', '')
+            old_path = os.environ.get('PATH', '')
+            os.environ['PATH'] = os.path.dirname(z7_path) + os.pathsep + old_path
             logger.info(f"Added 7z to PATH: {z7_path}")
+            logger.info(f"Updated PATH: {os.environ['PATH'][:200]}...")
         else:
             logger.warning(f"7z not found in packaged environment: {z7_path}")
     else:
+        logger.info("App Bundle environment detected")
         app_dir = os.path.dirname(sys.executable)
         resources_dir = os.path.join(os.path.dirname(app_dir), 'Resources')
+        logger.info(f"App dir: {app_dir}")
+        logger.info(f"Resources dir: {resources_dir}")
         kcc_dir = os.path.join(resources_dir, 'kindlecomicconverter')
         # Add 7z to PATH for KCC support in App Bundle
         z7_path = os.path.join(resources_dir, '7z')
+        logger.info(f"Looking for 7z at: {z7_path}")
         if os.path.exists(z7_path):
-            os.environ['PATH'] = os.path.dirname(z7_path) + os.pathsep + os.environ.get('PATH', '')
+            old_path = os.environ.get('PATH', '')
+            os.environ['PATH'] = os.path.dirname(z7_path) + os.pathsep + old_path
             logger.info(f"Added 7z to PATH: {z7_path}")
+            logger.info(f"Updated PATH: {os.environ['PATH'][:200]}...")
         else:
             logger.warning(f"7z not found in App Bundle: {z7_path}")
 else:
+    logger.info("Running in development environment")
     # Development environment
     kcc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kcc')
 
