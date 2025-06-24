@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("EPUB to CBZ Converter")
+        self.logger = logging.getLogger(__name__)
 
         # Set initial window size including the hidden options area
         self.initial_height = 480  # Decreased by 10px
@@ -432,7 +433,7 @@ class MainWindow(QMainWindow):
         self.progress_status.clear()
         self.input_files = paths
 
-        logging.debug(f"Selected paths: {paths}")
+        self.logger.info(f"Selected {len(paths)} file(s) for conversion")
 
         # Update input path label and hide browse button
         if len(paths) == 1:
@@ -451,7 +452,6 @@ class MainWindow(QMainWindow):
         # Set default output directory if not set
         if not self.output_path.text():
             default_output = os.path.dirname(paths[0])
-            logging.debug(f"Setting default output directory: {default_output}")
             self.output_path.setText(default_output)
             self.output_path.setProperty("hasPath", True)
             self.output_path.style().unpolish(self.output_path)
@@ -474,7 +474,6 @@ class MainWindow(QMainWindow):
             ""
         )
         if path:
-            logging.debug(f"Selected output path: {path}")
             self.output_path.setText(path)
             self.output_path.setProperty("hasPath", True)
             self.output_path.style().unpolish(self.output_path)
@@ -496,37 +495,62 @@ class MainWindow(QMainWindow):
 
     def start_conversion(self):
         if not self.input_files or not self.output_path.text():
+            self.logger.warning("Cannot start conversion: missing input files or output path")
             return
 
-        # Reset progress and status
-        self.progress_bar.setValue(0)
-        self.progress_bar.setFormat("0%")
-        self.progress_status.clear()
+        try:
+            # Validate output directory exists and is writable
+            output_dir = self.output_path.text()
+            if not os.path.exists(output_dir):
+                try:
+                    os.makedirs(output_dir, exist_ok=True)
+                    self.logger.info(f"Created output directory: {output_dir}")
+                except Exception as e:
+                    self.logger.error(f"Cannot create output directory: {e}")
+                    self.handle_error(f"Cannot create output directory: {e}")
+                    return
+            
+            if not os.access(output_dir, os.W_OK):
+                self.logger.error(f"Output directory is not writable: {output_dir}")
+                self.handle_error("Output directory is not writable")
+                return
 
-        # Disable UI elements during conversion
-        self.convert_button.setEnabled(False)
-        self.select_input_button.setEnabled(False)
-        self.output_button.setEnabled(False)
-        self.options_input.setEnabled(False)
+            self.logger.info(f"Starting conversion of {len(self.input_files)} file(s)")
+            
+            # Reset progress and status
+            self.progress_bar.setValue(0)
+            self.progress_bar.setFormat("0%")
+            self.progress_status.clear()
 
-        # Disable clicking on path labels
-        self.input_path_label.setProperty("clickable", False)
-        self.output_path.setProperty("clickable", False)
-        self.input_path_label.setCursor(Qt.ArrowCursor)
-        self.output_path.setCursor(Qt.ArrowCursor)
-        self.input_path_label.style().unpolish(self.input_path_label)
-        self.input_path_label.style().polish(self.input_path_label)
-        self.output_path.style().unpolish(self.output_path)
-        self.output_path.style().polish(self.output_path)
+            # Disable UI elements during conversion
+            self.convert_button.setEnabled(False)
+            self.select_input_button.setEnabled(False)
+            self.output_button.setEnabled(False)
+            self.options_input.setEnabled(False)
 
-        # Disable drag-drop area
-        self.drop_area.setProperty("disabled", True)
-        self.drop_area.setCursor(Qt.ArrowCursor)
-        self.drop_area.style().unpolish(self.drop_area)
-        self.drop_area.style().polish(self.drop_area)
+            # Disable clicking on path labels
+            self.input_path_label.setProperty("clickable", False)
+            self.output_path.setProperty("clickable", False)
+            self.input_path_label.setCursor(Qt.ArrowCursor)
+            self.output_path.setCursor(Qt.ArrowCursor)
+            self.input_path_label.style().unpolish(self.input_path_label)
+            self.input_path_label.style().polish(self.input_path_label)
+            self.output_path.style().unpolish(self.output_path)
+            self.output_path.style().polish(self.output_path)
 
-        self.current_file_index = 0
-        self.process_next_file()
+            # Disable drag-drop area
+            self.drop_area.setProperty("disabled", True)
+            self.drop_area.setCursor(Qt.ArrowCursor)
+            self.drop_area.style().unpolish(self.drop_area)
+            self.drop_area.style().polish(self.drop_area)
+
+            self.current_file_index = 0
+            self.process_next_file()
+            
+        except Exception as e:
+            self.logger.error(f"Error starting conversion: {e}")
+            self.handle_error(f"Error starting conversion: {e}")
+            self.conversion_completed()
 
     def process_next_file(self):
         if self.current_file_index >= len(self.input_files):
@@ -602,7 +626,7 @@ class MainWindow(QMainWindow):
             self.progress_status.setText(
                 f"Error in file {self.current_file_index + 1} of {total_files}: {error_msg}"
             )
-        logging.error(f"Conversion error: {error_msg}")
+        self.logger.error(f"Conversion error: {error_msg}")
 
     def file_processed(self, success):
         """Handle file processing completion."""
@@ -683,7 +707,6 @@ class MainWindow(QMainWindow):
     def update_convert_button_state(self):
         has_input = bool(self.input_files)
         has_output = bool(self.output_path.text())
-        logging.debug(f"Update convert button state - Input files: {has_input}, Output path: {has_output}")
 
         self.convert_button.setEnabled(has_input and has_output)
 
@@ -724,11 +747,9 @@ class MainWindow(QMainWindow):
             device_info_path = resource_manager.get_config_file('device_info.json')
             
             if not device_info_path:
-                # Log detailed path information for debugging
-                debug_info = resource_manager.debug_info()
-                print(f"Device info file not found. Debug info: {debug_info}")
+                self.logger.error("Device info file not found")
                 
-                # Try some fallback locations for debugging
+                # Try some fallback locations
                 fallback_paths = [
                     'config/device_info.json',
                     'device_info.json',
@@ -739,18 +760,27 @@ class MainWindow(QMainWindow):
                 for fallback in fallback_paths:
                     if os.path.exists(fallback):
                         device_info_path = Path(fallback)
-                        print(f"Found device_info.json at fallback location: {device_info_path}")
+                        self.logger.info(f"Found device_info.json at fallback location: {device_info_path}")
                         break
                 
                 if not device_info_path:
-                    print("ERROR: device_info.json not found in any location")
+                    self.logger.error("device_info.json not found in any location")
                     self.device_combo.addItem("Error: Device info not found", "error")
                     return
 
-            print(f"Loading device info from: {device_info_path}")
+            self.logger.info(f"Loading device info from: {device_info_path}")
             
-            with open(device_info_path, 'r', encoding='utf-8') as f:
-                device_data = json.load(f)
+            try:
+                with open(device_info_path, 'r', encoding='utf-8') as f:
+                    device_data = json.load(f)
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Invalid JSON in device info file: {e}")
+                self.device_combo.addItem("Error: Invalid device info file", "error")
+                return
+            except Exception as e:
+                self.logger.error(f"Error reading device info file: {e}")
+                self.device_combo.addItem("Error: Cannot read device info", "error")
+                return
 
             # Store device info for later use
             self.device_info = device_data
@@ -770,10 +800,10 @@ class MainWindow(QMainWindow):
             if default_index != -1:
                 self.device_combo.setCurrentIndex(default_index)
 
-            print(f"Loaded {len(device_data)} device configurations")
+            self.logger.info(f"Loaded {len(device_data)} device configurations")
 
         except Exception as e:
-            print(f"Error loading device info: {e}")
+            self.logger.error(f"Unexpected error loading device info: {e}")
             # Add error item to combo box
             self.device_combo.clear()
             self.device_combo.addItem(f"Error: {str(e)}", "error")

@@ -1,4 +1,5 @@
 import logging
+import os
 
 from PySide6.QtCore import QThread, Signal
 
@@ -37,40 +38,44 @@ class ConversionWorker(QThread):
         self._current_step = ""
         self._current_progress = 0
         self.converter = EPUBConverter()
+        self.logger = logging.getLogger(__name__)
 
     def update_progress(self, message):
         """Update progress based on the current processing step."""
-        if isinstance(message, (int, float)):
-            # Handle numeric progress updates
-            progress = int(message)
-            # Directly emit the progress value if it's a numeric update
-            self._current_progress = progress
-            self.progress.emit(self._current_progress)
-            logging.debug(f"Progress update: {progress}%")
-        else:
-            # Handle status message updates
-            message = str(message).strip()
-
-            # Special handling for KCC status messages
-            if "Preparing source images" in message:
-                message = "Preparing source images"
-            elif "Checking images" in message:
-                message = "Checking images"
-            elif "Processing images" in message:
-                message = "Processing KCC images"
-            elif "Creating CBZ file" in message:
-                message = "Creating CBZ file"
-
-            if message in self.PROGRESS_STEPS:
-                self._current_step = message
-                self._current_progress = self.PROGRESS_STEPS[message]
+        try:
+            if isinstance(message, (int, float)):
+                # Handle numeric progress updates
+                progress = int(message)
+                # Directly emit the progress value if it's a numeric update
+                self._current_progress = progress
                 self.progress.emit(self._current_progress)
-                self.status.emit(message)
-                logging.debug(f"Status update: {message} ({self._current_progress}%)")
+            else:
+                # Handle status message updates
+                message = str(message).strip()
+
+                # Special handling for KCC status messages
+                if "Preparing source images" in message:
+                    message = "Preparing source images"
+                elif "Checking images" in message:
+                    message = "Checking images"
+                elif "Processing images" in message:
+                    message = "Processing KCC images"
+                elif "Creating CBZ file" in message:
+                    message = "Creating CBZ file"
+
+                if message in self.PROGRESS_STEPS:
+                    self._current_step = message
+                    self._current_progress = self.PROGRESS_STEPS[message]
+                    self.progress.emit(self._current_progress)
+                    self.status.emit(message)
+        except Exception as e:
+            self.logger.warning(f"Error updating progress: {e}")
 
     def run(self):
         """Run the conversion process."""
         try:
+            self.logger.info(f"Starting conversion worker for: {os.path.basename(self.input_file)}")
+            
             # Initial progress
             self.update_progress("Starting conversion")
 
@@ -85,15 +90,19 @@ class ConversionWorker(QThread):
             if success:
                 self.update_progress("Completed")
                 self.completed.emit(True)
+                self.logger.info(f"Conversion completed successfully: {os.path.basename(self.input_file)}")
             else:
                 self.error.emit("Conversion failed")
                 self.completed.emit(False)
+                self.logger.error(f"Conversion failed: {os.path.basename(self.input_file)}")
 
         except Exception as e:
-            logging.error(f"Error in worker: {str(e)}")
-            self.error.emit(str(e))
+            error_msg = f"Worker error: {str(e)}"
+            self.logger.error(f"Worker error for {os.path.basename(self.input_file)}: {e}")
+            self.error.emit(error_msg)
             self.completed.emit(False)
 
     def stop(self):
         """Stop the conversion process."""
         self._stop = True
+        self.logger.info(f"Conversion worker stop requested for: {os.path.basename(self.input_file)}")

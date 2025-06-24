@@ -38,14 +38,32 @@ class EPUBConverter:
         Returns:
             bool: True if conversion successful, False otherwise
         """
+        temp_dir = None
         try:
+            self.logger.info(f"Starting conversion: {os.path.basename(input_file)}")
+            
             if status_callback:
                 status_callback("Starting conversion")
             if progress_callback:
                 progress_callback(0)
 
+            # Validate input file
+            if not os.path.exists(input_file):
+                raise FileNotFoundError(f"Input file not found: {input_file}")
+            if not input_file.lower().endswith('.epub'):
+                raise ValueError(f"Invalid input file format: {input_file}")
+
+            # Validate output directory
+            if not os.path.exists(output_directory):
+                try:
+                    os.makedirs(output_directory, exist_ok=True)
+                    self.logger.info(f"Created output directory: {output_directory}")
+                except Exception as e:
+                    raise PermissionError(f"Cannot create output directory: {e}")
+
             # Create a temporary directory
             temp_dir = tempfile.mkdtemp()
+            self.logger.info(f"Created temporary directory: {temp_dir}")
 
             if status_callback:
                 status_callback("Processing EPUB file")
@@ -53,9 +71,14 @@ class EPUBConverter:
                 progress_callback(5)
 
             # Extract EPUB contents
-            with zipfile.ZipFile(input_file, 'r') as epub:
-                epub.extractall(temp_dir)
-            self.logger.info(f"Extracted EPUB contents to {temp_dir}")
+            try:
+                with zipfile.ZipFile(input_file, 'r') as epub:
+                    epub.extractall(temp_dir)
+                self.logger.info("Successfully extracted EPUB contents")
+            except zipfile.BadZipFile as e:
+                raise ValueError(f"Invalid EPUB file: {e}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to extract EPUB: {e}")
 
             if status_callback:
                 status_callback("Extracting images")
@@ -63,7 +86,13 @@ class EPUBConverter:
                 progress_callback(10)
 
             # Process EPUB structure
-            ordered_html_files = self._process_epub_structure(temp_dir)
+            try:
+                ordered_html_files = self._process_epub_structure(temp_dir)
+                if not ordered_html_files:
+                    self.logger.warning("No HTML files found in EPUB")
+            except Exception as e:
+                self.logger.error(f"Error processing EPUB structure: {e}")
+                ordered_html_files = []
 
             if status_callback:
                 status_callback("Processing images")
@@ -71,7 +100,15 @@ class EPUBConverter:
                 progress_callback(20)
 
             # Extract and order images
-            ordered_images_dir = self._extract_images(temp_dir, ordered_html_files)
+            try:
+                ordered_images_dir = self._extract_images(temp_dir, ordered_html_files)
+                image_count = len([f for f in os.listdir(ordered_images_dir) 
+                                 if f.endswith(('.jpg', '.jpeg', '.png'))])
+                if image_count == 0:
+                    raise ValueError("No images found in EPUB file")
+                self.logger.info(f"Extracted {image_count} images")
+            except Exception as e:
+                raise RuntimeError(f"Failed to extract images: {e}")
 
             if status_callback:
                 status_callback("Creating ZIP file")
@@ -87,20 +124,30 @@ class EPUBConverter:
                 status_callback
             )
 
-            # Clean up
-            shutil.rmtree(temp_dir)
-
             if success:
+                self.logger.info(f"Conversion completed successfully: {os.path.basename(input_file)}")
                 if status_callback:
                     status_callback("Completed")
                 if progress_callback:
                     progress_callback(100)
+            else:
+                self.logger.error(f"Conversion failed: {os.path.basename(input_file)}")
 
             return success
 
         except Exception as e:
-            self.logger.error(f"Error in conversion process: {str(e)}")
+            self.logger.error(f"Conversion failed for {os.path.basename(input_file)}: {str(e)}")
+            if status_callback:
+                status_callback(f"Error: {str(e)}")
             return False
+        finally:
+            # Clean up temporary directory
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                    self.logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up temporary directory: {e}")
 
     def _process_epub_structure(self, temp_dir):
         """Process EPUB structure and return ordered HTML files"""
@@ -121,6 +168,7 @@ class EPUBConverter:
     def _find_opf_path(self, container_path, temp_dir):
         """Find OPF file path from container.xml"""
         if not os.path.exists(container_path):
+            self.logger.warning("container.xml not found")
             return None
 
         try:
@@ -136,9 +184,15 @@ class EPUBConverter:
                 if rootfile.get('media-type') == 'application/oebps-package+xml':
                     opf_path = rootfile.get('full-path')
                     if opf_path:
-                        return os.path.join(temp_dir, opf_path)
+                        full_opf_path = os.path.join(temp_dir, opf_path)
+                        if os.path.exists(full_opf_path):
+                            return full_opf_path
+                        else:
+                            self.logger.warning(f"OPF file not found: {full_opf_path}")
+        except ET.ParseError as e:
+            self.logger.error(f"Invalid XML in container.xml: {e}")
         except Exception as e:
-            self.logger.error(f"Error parsing container.xml: {str(e)}")
+            self.logger.error(f"Error parsing container.xml: {e}")
 
         return None
 
@@ -156,81 +210,74 @@ class EPUBConverter:
             manifest_items = self._process_manifest(opf_root, ns, opf_path, temp_dir)
             ordered_html_files = self._process_spine(opf_root, ns, manifest_items)
 
+        except ET.ParseError as e:
+            self.logger.error(f"Invalid XML in OPF file: {e}")
         except Exception as e:
-            self.logger.error(f"Error processing OPF file: {str(e)}")
+            self.logger.error(f"Error processing OPF file: {e}")
 
         return ordered_html_files
 
     def _create_cbz(self, ordered_images_dir, input_file, output_directory, progress_callback, status_callback):
         """Create CBZ file using KCC"""
+        ordered_zip_path = None
         try:
-            self.logger.info("="*50)
-            self.logger.info("Starting _create_cbz method")
+            self.logger.info("Starting CBZ creation process")
             
             # Create output filename
             output_file = os.path.join(
                 output_directory,
                 os.path.splitext(os.path.basename(input_file))[0] + '.cbz'
             )
-            self.logger.info(f"Output file: {output_file}")
 
             # Create ZIP file with ordered images
             ordered_zip_path = os.path.join(os.path.dirname(ordered_images_dir), 'ordered_images.zip')
-            self.logger.info(f"Creating temporary ZIP: {ordered_zip_path}")
             
-            with zipfile.ZipFile(ordered_zip_path, 'w', zipfile.ZIP_DEFLATED) as ordered_zip:
-                image_files = sorted([
-                    f for f in os.listdir(ordered_images_dir)
-                    if f.endswith(('.jpg', '.jpeg', '.png'))
-                ])
+            try:
+                with zipfile.ZipFile(ordered_zip_path, 'w', zipfile.ZIP_DEFLATED) as ordered_zip:
+                    image_files = sorted([
+                        f for f in os.listdir(ordered_images_dir)
+                        if f.endswith(('.jpg', '.jpeg', '.png'))
+                    ])
 
-                self.logger.info(f"Found {len(image_files)} image files to package")
-                total_files = len(image_files)
-                for i, filename in enumerate(image_files, 1):
-                    img_path = os.path.join(ordered_images_dir, filename)
-                    ordered_zip.write(img_path, filename)
-                    if progress_callback:
-                        zip_progress = 40 + (10 * i / total_files)
-                        progress_callback(int(zip_progress))
+                    if not image_files:
+                        raise ValueError("No image files found to package")
 
-            self.logger.info(f"ZIP creation completed: {os.path.getsize(ordered_zip_path)} bytes")
+                    total_files = len(image_files)
+                    for i, filename in enumerate(image_files, 1):
+                        img_path = os.path.join(ordered_images_dir, filename)
+                        if not os.path.exists(img_path):
+                            self.logger.warning(f"Image file not found: {img_path}")
+                            continue
+                        ordered_zip.write(img_path, filename)
+                        if progress_callback:
+                            zip_progress = 40 + (10 * i / total_files)
+                            progress_callback(int(zip_progress))
+
+                self.logger.info(f"Created temporary ZIP with {len(image_files)} images")
+            except Exception as e:
+                raise RuntimeError(f"Failed to create temporary ZIP: {e}")
 
             if status_callback:
                 status_callback("Running KCC conversion...")
             if progress_callback:
                 progress_callback(50)
 
-            self.logger.info("="*30 + " KCC EXECUTION START " + "="*30)
-            
             # Set up environment using ResourceManager
             original_cwd = os.getcwd()
             original_path = resource_manager.setup_binary_environment()
-            
-            self.logger.info(f"Original CWD: {original_cwd}")
-            if original_path:
-                self.logger.info(f"Environment setup completed")
-                
-                # Check 7z binary
-                z7_path = resource_manager.get_binary_path('7z')
-                if z7_path:
-                    self.logger.info(f"7z binary found: {z7_path}")
-                    self.logger.info(f"7z file size: {z7_path.stat().st_size} bytes")
-                    self.logger.info(f"7z executable: {os.access(z7_path, os.X_OK)}")
-                else:
-                    self.logger.warning("7z binary not found")
             
             try:
                 # Switch to KCC working directory using ResourceManager
                 kcc_working_dir = resource_manager.get_working_directory()
                 
-                self.logger.info(f"KCC working directory: {kcc_working_dir}")
-                self.logger.info(f"KCC working dir exists: {kcc_working_dir.exists()}")
+                if not kcc_working_dir.exists():
+                    raise RuntimeError(f"KCC working directory not found: {kcc_working_dir}")
                 
-                if kcc_working_dir.exists():
+                try:
                     os.chdir(str(kcc_working_dir))
-                    self.logger.info(f"Changed to KCC working dir: {os.getcwd()}")
-                else:
-                    self.logger.warning(f"KCC working directory not found, staying in: {os.getcwd()}")
+                    self.logger.info(f"Changed to KCC working directory: {kcc_working_dir}")
+                except Exception as e:
+                    raise RuntimeError(f"Failed to change to KCC directory: {e}")
 
                 # Run KCC conversion
                 kcc_args = [
@@ -245,48 +292,12 @@ class EPUBConverter:
                     '-o', output_file
                 ]
 
-                self.logger.info(f"KCC arguments: {kcc_args}")
-                self.logger.info("Attempting to import KCC...")
-                
                 try:
                     from kindlecomicconverter.comic2ebook import main as kcc_main
-                    self.logger.info("KCC import successful")
                 except ImportError as e:
-                    self.logger.error(f"KCC import failed: {e}")
-                    self.logger.error(f"Current sys.path: {sys.path}")
-                    raise
+                    raise RuntimeError(f"KCC module not found: {e}")
 
-                # Check if 7z command is available
-                self.logger.info("Checking 7z command availability...")
-                import subprocess
-                try:
-                    result = subprocess.run(['which', '7z'], capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        self.logger.info(f"7z command found at: {result.stdout.strip()}")
-                    else:
-                        self.logger.warning("7z command not found with 'which'")
-                    
-                    # Also try running 7z directly
-                    result = subprocess.run(['7z'], capture_output=True, text=True, timeout=5)
-                    self.logger.info(f"7z test run exit code: {result.returncode}")
-                    if result.stdout:
-                        self.logger.info(f"7z stdout: {result.stdout[:200]}...")
-                    if result.stderr:
-                        self.logger.info(f"7z stderr: {result.stderr[:200]}...")
-                        
-                except Exception as e:
-                    self.logger.error(f"Error checking 7z: {e}")
-
-                # Log current environment
-                self.logger.info(f"Current PATH: {os.environ.get('PATH', 'NOT_SET')}")
-                self.logger.info(f"Current working dir: {os.getcwd()}")
-                self.logger.info(f"Input ZIP file: {ordered_zip_path}")
-                self.logger.info(f"Input ZIP exists: {os.path.exists(ordered_zip_path)}")
-                self.logger.info(f"Output file target: {output_file}")
-                self.logger.info(f"Output dir exists: {os.path.exists(os.path.dirname(output_file))}")
-                self.logger.info(f"Output dir writable: {os.access(os.path.dirname(output_file), os.W_OK)}")
-
-                self.logger.info("Starting KCC execution...")
+                self.logger.info("Starting KCC conversion...")
                 import time
                 start_time = time.time()
                 
@@ -303,22 +314,13 @@ class EPUBConverter:
                     sys.stdout = captured_stdout
                     sys.stderr = captured_stderr
                     
-                    self.logger.info("Executing KCC with redirected output...")
-                    
                     try:
                         kcc_result = kcc_main(kcc_args)
-                        execution_time = time.time() - start_time
-                        self.logger.info(f"KCC completed in {execution_time:.2f}s with result: {kcc_result}")
                         success = kcc_result == 0
                     except SystemExit as e:
-                        execution_time = time.time() - start_time
-                        self.logger.info(f"KCC SystemExit in {execution_time:.2f}s with code: {e.code}")
                         success = e.code == 0
                     except Exception as e:
-                        execution_time = time.time() - start_time
-                        self.logger.error(f"KCC exception in {execution_time:.2f}s: {e}")
-                        import traceback
-                        self.logger.error(f"Traceback: {traceback.format_exc()}")
+                        self.logger.error(f"KCC execution error: {e}")
                         success = False
                 
                 finally:
@@ -326,58 +328,45 @@ class EPUBConverter:
                     sys.stdout = old_stdout
                     sys.stderr = old_stderr
                     
-                    # Log captured output
-                    stdout_content = captured_stdout.getvalue()
+                    execution_time = time.time() - start_time
+                    self.logger.info(f"KCC completed in {execution_time:.2f}s")
+                    
+                    # Log captured output only if there are errors
                     stderr_content = captured_stderr.getvalue()
-                    
-                    if stdout_content:
-                        self.logger.info("KCC STDOUT:")
-                        for line in stdout_content.strip().split('\n'):
-                            if line.strip():
-                                self.logger.info(f"  {line}")
-                    else:
-                        self.logger.info("KCC STDOUT: (empty)")
-                    
-                    if stderr_content:
-                        self.logger.error("KCC STDERR:")
-                        for line in stderr_content.strip().split('\n'):
+                    if stderr_content and not success:
+                        self.logger.error("KCC reported errors:")
+                        for line in stderr_content.strip().split('\n')[:10]:  # Limit to first 10 lines
                             if line.strip():
                                 self.logger.error(f"  {line}")
-                    else:
-                        self.logger.info("KCC STDERR: (empty)")
-
-                self.logger.info(f"Final KCC success status: {success}")
 
             finally:
                 # Restore environment using ResourceManager
-                self.logger.info("Restoring environment...")
-                os.chdir(original_cwd)
-                self.logger.info(f"Restored CWD: {os.getcwd()}")
-                resource_manager.restore_environment(original_path)
-                if original_path:
-                    self.logger.info("Restored PATH")
+                try:
+                    os.chdir(original_cwd)
+                    resource_manager.restore_environment(original_path)
+                except Exception as e:
+                    self.logger.warning(f"Failed to restore environment: {e}")
 
-            self.logger.info("="*30 + " KCC EXECUTION END " + "="*30)
-
-            # Clean up temporary zip file
-            self.logger.info(f"Cleaning up temporary ZIP: {ordered_zip_path}")
-            os.remove(ordered_zip_path)
-
-            # Check if output file was created
+            # Verify output file was created
             if os.path.exists(output_file):
                 output_size = os.path.getsize(output_file)
-                self.logger.info(f"Output CBZ created successfully: {output_size} bytes")
+                self.logger.info(f"CBZ file created successfully: {output_size} bytes")
             else:
-                self.logger.error(f"Output CBZ file not created: {output_file}")
+                self.logger.error(f"CBZ file was not created: {output_file}")
+                success = False
 
-            self.logger.info(f"_create_cbz returning success: {success}")
             return success
 
         except Exception as e:
-            self.logger.error(f"Error in _create_cbz: {str(e)}")
-            import traceback
-            self.logger.error(f"Full traceback: {traceback.format_exc()}")
+            self.logger.error(f"Error creating CBZ: {str(e)}")
             return False
+        finally:
+            # Clean up temporary zip file
+            if ordered_zip_path and os.path.exists(ordered_zip_path):
+                try:
+                    os.remove(ordered_zip_path)
+                except Exception as e:
+                    self.logger.warning(f"Failed to clean up temporary ZIP: {e}")
 
     def _process_manifest(self, opf_root, ns, opf_path, temp_dir):
         """Process manifest section of OPF file"""
@@ -428,36 +417,46 @@ class EPUBConverter:
     def _extract_images(self, temp_dir, ordered_html_files):
         """Extract and order images from HTML files"""
         ordered_images_dir = os.path.join(temp_dir, 'ordered_images')
-        os.makedirs(ordered_images_dir, exist_ok=True)
+        
+        try:
+            os.makedirs(ordered_images_dir, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create images directory: {e}")
 
         image_count = 1
         processed_images = {}
-        current_file = 0
+        total_images_processed = 0
 
         for html_file in ordered_html_files:
-            current_file += 1
             html_path = os.path.join(temp_dir, html_file)
-            if os.path.exists(html_path):
-                try:
-                    html_content = ET.parse(html_path)
-                    html_root = html_content.getroot()
+            if not os.path.exists(html_path):
+                self.logger.warning(f"HTML file not found: {html_file}")
+                continue
+                
+            try:
+                html_content = ET.parse(html_path)
+                html_root = html_content.getroot()
 
-                    ns = ''
-                    if '}' in html_root.tag:
-                        ns = html_root.tag.split('}')[0] + '}'
+                ns = ''
+                if '}' in html_root.tag:
+                    ns = html_root.tag.split('}')[0] + '}'
 
-                    img_nodes = html_root.findall(f".//{ns}img" if ns else ".//img")
-                    for img in img_nodes:
-                        img_src = img.get('src', '')
-                        if img_src.startswith('../'):
-                            img_src = img_src[3:]
+                img_nodes = html_root.findall(f".//{ns}img" if ns else ".//img")
+                for img in img_nodes:
+                    img_src = img.get('src', '')
+                    if not img_src:
+                        continue
+                        
+                    if img_src.startswith('../'):
+                        img_src = img_src[3:]
 
-                        # Convert image path to absolute path
-                        full_img_path = os.path.join(os.path.dirname(html_path), img_src)
-                        if not os.path.exists(full_img_path):
-                            full_img_path = os.path.join(temp_dir, img_src)
+                    # Convert image path to absolute path
+                    full_img_path = os.path.join(os.path.dirname(html_path), img_src)
+                    if not os.path.exists(full_img_path):
+                        full_img_path = os.path.join(temp_dir, img_src)
 
-                        if os.path.exists(full_img_path) and img_src not in processed_images:
+                    if os.path.exists(full_img_path) and img_src not in processed_images:
+                        try:
                             # Special handling for cover and creator images
                             if 'cover' in img_src.lower():
                                 new_name = "0000_cover"
@@ -476,9 +475,22 @@ class EPUBConverter:
                             new_path = os.path.join(ordered_images_dir, new_filename)
                             shutil.copy2(full_img_path, new_path)
                             processed_images[img_src] = new_filename
+                            total_images_processed += 1
+                        except Exception as e:
+                            self.logger.warning(f"Failed to copy image {img_src}: {e}")
+                            continue
+                    elif not os.path.exists(full_img_path):
+                        self.logger.warning(f"Image file not found: {img_src}")
 
-                except Exception as e:
-                    self.logger.error(f"Error processing HTML file {html_file}: {str(e)}")
-                    continue
+            except ET.ParseError as e:
+                self.logger.error(f"Invalid XML in HTML file {html_file}: {e}")
+                continue
+            except Exception as e:
+                self.logger.error(f"Error processing HTML file {html_file}: {e}")
+                continue
 
+        if total_images_processed == 0:
+            raise ValueError("No images were successfully extracted from EPUB")
+            
+        self.logger.info(f"Successfully extracted {total_images_processed} images")
         return ordered_images_dir
