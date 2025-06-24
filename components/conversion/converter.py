@@ -438,6 +438,44 @@ class EPUBConverter:
                     except Exception as e:
                         self.logger.error(f"❌ KCC execution error: {e}")
                         success = False
+                        
+                        # Enhanced debugging for subprocess errors
+                        if hasattr(e, 'cmd') and hasattr(e, 'returncode'):
+                            self.logger.error(f"  Command that failed: {e.cmd}")
+                            self.logger.error(f"  Return code: {e.returncode}")
+                            if hasattr(e, 'stderr') and e.stderr:
+                                self.logger.error(f"  Process stderr: {e.stderr}")
+                            if hasattr(e, 'stdout') and e.stdout:
+                                self.logger.error(f"  Process stdout: {e.stdout}")
+                        
+                        # If it's a 7z wildcard issue, try to diagnose
+                        error_str = str(e)
+                        if "7z" in error_str and "*" in error_str:
+                            import re
+                            # Extract the failing path with wildcard
+                            path_match = re.search(r"'([^']*\*[^']*)'", error_str)
+                            if path_match:
+                                failed_path = path_match.group(1)
+                                self.logger.error(f"🔍 Diagnosing wildcard path issue:")
+                                self.logger.error(f"  Failed wildcard path: {failed_path}")
+                                
+                                # Check directory and files
+                                import glob
+                                dir_part = failed_path.rstrip('/*')
+                                self.logger.error(f"  Directory part: {dir_part}")
+                                self.logger.error(f"  Directory exists: {os.path.exists(dir_part)}")
+                                if os.path.exists(dir_part):
+                                    try:
+                                        files = glob.glob(failed_path)
+                                        self.logger.error(f"  Glob expansion finds: {len(files)} files")
+                                        if files:
+                                            self.logger.error(f"  First few files: {files[:3]}")
+                                        else:
+                                            # List actual contents
+                                            actual_files = os.listdir(dir_part)
+                                            self.logger.error(f"  Actual directory contents: {actual_files[:10]}")
+                                    except Exception as glob_e:
+                                        self.logger.error(f"  Error during glob: {glob_e}")
                 
                 finally:
                     # Restore stdout/stderr
@@ -447,27 +485,48 @@ class EPUBConverter:
                     execution_time = time.time() - start_time
                     self.logger.info(f"KCC completed in {execution_time:.2f}s")
                     
-                    # Log captured output for debugging
-                    stdout_content = captured_stdout.getvalue()
-                    stderr_content = captured_stderr.getvalue()
-                    
-                    if stdout_content:
-                        self.logger.info("KCC stdout:")
-                        for line in stdout_content.strip().split('\n')[:20]:  # Limit to first 20 lines
-                            if line.strip():
+                                    # Log captured output for debugging
+                stdout_content = captured_stdout.getvalue()
+                stderr_content = captured_stderr.getvalue()
+                
+                if stdout_content:
+                    self.logger.info("KCC stdout:")
+                    for line in stdout_content.strip().split('\n')[:20]:  # Limit to first 20 lines
+                        if line.strip():
+                            self.logger.info(f"  {line}")
+                
+                if stderr_content:
+                    if success:
+                        self.logger.info("KCC stderr (info):")
+                    else:
+                        self.logger.error("KCC stderr (errors):")
+                    for line in stderr_content.strip().split('\n')[:20]:  # Limit to first 20 lines
+                        if line.strip():
+                            if success:
                                 self.logger.info(f"  {line}")
-                    
-                    if stderr_content:
-                        if success:
-                            self.logger.info("KCC stderr (info):")
+                            else:
+                                self.logger.error(f"  {line}")
+                
+                # Additional debugging: try to manually test the failing 7z command
+                if not success and "7z" in stderr_content:
+                    self.logger.error("🔍 Attempting to diagnose 7z command failure...")
+                    # Try to find the exact 7z command that failed from stderr
+                    import re
+                    z7_cmd_match = re.search(r"Command \['([^']+)',.*?'([^']*\*[^']*)'\]", stderr_content)
+                    if z7_cmd_match:
+                        failed_path = z7_cmd_match.group(2)
+                        self.logger.error(f"  Failed path with wildcard: {failed_path}")
+                        
+                        # Check if the directory exists
+                        import glob
+                        dir_part = failed_path.rstrip('/*')
+                        if os.path.exists(dir_part):
+                            files = glob.glob(failed_path)
+                            self.logger.error(f"  Directory exists, glob expansion finds {len(files)} files")
+                            if files:
+                                self.logger.error(f"  Sample files: {files[:3]}")
                         else:
-                            self.logger.error("KCC stderr (errors):")
-                        for line in stderr_content.strip().split('\n')[:20]:  # Limit to first 20 lines
-                            if line.strip():
-                                if success:
-                                    self.logger.info(f"  {line}")
-                                else:
-                                    self.logger.error(f"  {line}")
+                            self.logger.error(f"  Directory does not exist: {dir_part}")
 
             finally:
                 # Restore environment using ResourceManager
