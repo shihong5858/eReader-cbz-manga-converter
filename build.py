@@ -430,8 +430,8 @@ def build_package(target_platform: Optional[str] = None):
 
 
 def create_macos_dmg():
-    """Create ZIP installer for macOS (more reliable than DMG)."""
-    print_step("Creating macOS ZIP installer...")
+    """Create DMG installer for macOS with architecture-specific naming."""
+    print_step("Creating macOS DMG installer...")
     
     app_name = "eReader CBZ Manga Converter"
     app_path = DIST_DIR / f"{app_name}.app"
@@ -440,6 +440,16 @@ def create_macos_dmg():
         print_error(f"{app_path} not found")
         return
 
+    # Detect macOS architecture for proper file naming
+    import platform
+    arch = platform.machine().lower()
+    if arch in ['arm64', 'aarch64']:
+        arch_suffix = "arm"
+    elif arch in ['x86_64', 'amd64']:
+        arch_suffix = "intel"
+    else:
+        arch_suffix = arch  # fallback to actual architecture name
+
     # Check if appdmg is available
     if shutil.which("appdmg"):
         print("[INFO] Attempting to create DMG with appdmg...")
@@ -447,12 +457,13 @@ def create_macos_dmg():
         
         if installer_config.exists():
             try:
-                dmg_name = f"eReader_CBZ_Manga_Converter_macOS_arm_{VERSION}.dmg"
+                dmg_name = f"eReader_CBZ_Manga_Converter_macOS_{arch_suffix}_{VERSION}.dmg"
                 dmg_path = DIST_DIR / dmg_name
                 
                 print(f"[INFO] Running appdmg from {Path.cwd()}")
                 print(f"[INFO] Config: {installer_config.absolute()}")
                 print(f"[INFO] Output: {dmg_path.absolute()}")
+                print(f"[INFO] Architecture: {arch} -> {arch_suffix}")
                 
                 dmg_cmd = ["appdmg", str(installer_config.absolute()), str(dmg_path.absolute())]
                 result = subprocess.run(dmg_cmd, check=True, capture_output=True, text=True, cwd=Path.cwd())
@@ -479,8 +490,8 @@ def create_macos_dmg():
     else:
         print("[INFO] appdmg not available, creating ZIP instead...")
     
-    # Fallback to ZIP creation
-    zip_name = f"eReader_CBZ_Manga_Converter_macOS_arm_{VERSION}.zip"
+    # Fallback to ZIP creation with architecture-specific naming
+    zip_name = f"eReader_CBZ_Manga_Converter_macOS_{arch_suffix}_{VERSION}.zip"
     zip_path = DIST_DIR / zip_name
     
     try:
@@ -494,6 +505,7 @@ def create_macos_dmg():
                     zipf.write(file_path, arc_name)
         
         print_success(f"Created ZIP: {zip_name}")
+        print(f"[INFO] Architecture: {arch} -> {arch_suffix}")
         
         # Get file size
         size_mb = zip_path.stat().st_size / (1024 * 1024)
