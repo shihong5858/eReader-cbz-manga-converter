@@ -281,192 +281,56 @@ class EPUBConverter:
                     self.logger.info(f"Changed to KCC working directory: {kcc_working_dir}")
                     
                     # For macOS App Bundle, ensure 7z.so is accessible from current directory
-                    self.logger.info(f"🔍 Checking if 7z.so setup needed...")
-                    self.logger.info(f"  frozen: {getattr(sys, 'frozen', False)}")
-                    self.logger.info(f"  platform: {platform.system()}")
-                    self.logger.info(f"  executable: {sys.executable}")
-                    self.logger.info(f"  is_app_bundle: {'.app/Contents/' in sys.executable}")
-                    
                     if (getattr(sys, 'frozen', False) and 
                         platform.system() == "Darwin" and
                         '.app/Contents/' in sys.executable):  # macOS App Bundle
                         
-                        self.logger.info("🔧 Setting up 7z.so for macOS App Bundle...")
-                        
                         z7_so_source = resource_manager.base_path / "7z.so"
                         z7_so_target = Path.cwd() / "7z.so"
                         
-                        self.logger.info(f"  7z.so source path: {z7_so_source}")
-                        self.logger.info(f"  7z.so target path: {z7_so_target}")
-                        self.logger.info(f"  Current working directory: {Path.cwd()}")
-                        
-                        # Check source file
-                        if z7_so_source.exists():
-                            source_size = z7_so_source.stat().st_size
-                            self.logger.info(f"  ✅ Source 7z.so exists: {source_size} bytes")
-                        else:
-                            self.logger.error(f"  ❌ Source 7z.so NOT found: {z7_so_source}")
-                            # Check alternative locations
+                        # Check alternative source locations if primary not found
+                        if not z7_so_source.exists():
                             alt_locations = [
                                 resource_manager.base_path.parent / "Frameworks" / "7z.so",
                                 resource_manager.resources_path / "7z.so",
                             ]
                             for alt_path in alt_locations:
                                 if alt_path.exists():
-                                    self.logger.info(f"  🔍 Found alternative 7z.so: {alt_path}")
                                     z7_so_source = alt_path
                                     break
-                                else:
-                                    self.logger.info(f"  ❌ Not found at: {alt_path}")
                         
-                        # Check target file
-                        if z7_so_target.exists():
-                            target_size = z7_so_target.stat().st_size
-                            self.logger.info(f"  ℹ️  Target 7z.so already exists: {target_size} bytes")
-                            # Verify it's working
-                            if target_size > 1000000:  # Should be ~3MB
-                                self.logger.info(f"  ✅ Existing 7z.so looks valid, skipping setup")
-                            else:
-                                self.logger.warning(f"  ⚠️  Existing 7z.so seems too small, will replace")
-                                try:
-                                    z7_so_target.unlink()
-                                    self.logger.info(f"  🗑️  Removed invalid 7z.so")
-                                except Exception as e:
-                                    self.logger.error(f"  ❌ Failed to remove invalid 7z.so: {e}")
-                        else:
-                            self.logger.info(f"  ℹ️  Target 7z.so does not exist, will create")
-                        
-                        # Proceed with copy/link if needed
+                        # Set up 7z.so in working directory if needed
                         if z7_so_source.exists() and not z7_so_target.exists():
-                            self.logger.info(f"  🔧 Attempting to set up 7z.so...")
-                            
-                            # Try copy first
                             try:
                                 import shutil
-                                self.logger.info(f"  📋 Copying 7z.so: {z7_so_source} -> {z7_so_target}")
                                 shutil.copy2(str(z7_so_source), str(z7_so_target))
-                                
-                                # Verify copy
-                                if z7_so_target.exists():
-                                    copied_size = z7_so_target.stat().st_size
-                                    original_size = z7_so_source.stat().st_size
-                                    self.logger.info(f"  ✅ Copy successful! Original: {original_size} bytes, Copied: {copied_size} bytes")
-                                    
-                                    if copied_size != original_size:
-                                        self.logger.error(f"  ❌ Size mismatch in copied file!")
-                                    else:
-                                        self.logger.info(f"  ✅ 7z.so copy verified successfully")
-                                else:
-                                    self.logger.error(f"  ❌ Copy operation failed - file not found after copy")
-                                    
+                                self.logger.info(f"Copied 7z.so to working directory: {z7_so_target}")
                             except Exception as copy_e:
-                                self.logger.warning(f"  ⚠️  Copy failed: {copy_e}")
-                                self.logger.info(f"  🔗 Trying symlink instead...")
-                                
+                                self.logger.warning(f"Failed to copy 7z.so: {copy_e}")
                                 # Try creating symlink instead
                                 try:
                                     z7_so_target.symlink_to(z7_so_source)
-                                    if z7_so_target.exists() and z7_so_target.is_symlink():
-                                        link_target = z7_so_target.readlink()
-                                        self.logger.info(f"  ✅ Symlink created: {z7_so_target} -> {link_target}")
-                                    else:
-                                        self.logger.error(f"  ❌ Symlink creation failed - file not found after link")
+                                    self.logger.info(f"Created 7z.so symlink: {z7_so_target} -> {z7_so_source}")
                                 except Exception as link_e:
-                                    self.logger.error(f"  ❌ Symlink creation failed: {link_e}")
-                        
-                        # Final verification
-                        self.logger.info(f"  🔍 Final 7z.so verification:")
-                        if z7_so_target.exists():
-                            final_size = z7_so_target.stat().st_size
-                            is_symlink = z7_so_target.is_symlink()
-                            self.logger.info(f"    ✅ 7z.so available: {final_size} bytes, symlink: {is_symlink}")
-                            
-                            # Test if it's readable
-                            try:
-                                with open(z7_so_target, 'rb') as f:
-                                    first_bytes = f.read(8)
-                                self.logger.info(f"    ✅ 7z.so is readable, starts with: {first_bytes.hex()}")
-                            except Exception as read_e:
-                                self.logger.error(f"    ❌ 7z.so read test failed: {read_e}")
-                        else:
-                            self.logger.error(f"    ❌ 7z.so NOT available in working directory")
-                            
-                        # List all files in working directory for debugging
-                        try:
-                            cwd_files = list(Path.cwd().iterdir())
-                            so_files = [f for f in cwd_files if f.suffix == '.so']
-                            self.logger.info(f"  📁 .so files in working directory: {[f.name for f in so_files]}")
-                        except Exception as e:
-                            self.logger.warning(f"  ⚠️  Could not list working directory: {e}")
-                    else:
-                        self.logger.info("  ⏭️  7z.so setup not needed (not macOS App Bundle)")
+                                    self.logger.error(f"Failed to create 7z.so symlink: {link_e}")
+                        elif z7_so_target.exists():
+                            self.logger.debug(f"7z.so already exists in working directory: {z7_so_target}")
+                        elif not z7_so_source.exists():
+                            self.logger.error(f"7z.so source not found: {z7_so_source}")
                             
                 except Exception as e:
                     raise RuntimeError(f"Failed to change to KCC directory: {e}")
 
-                # Verify 7z availability before KCC execution with detailed logging
+                # Verify 7z availability before KCC execution
                 import subprocess
-                current_path = os.environ.get('PATH', '')
-                self.logger.info(f"Current PATH length: {len(current_path)} chars")
-                self.logger.info(f"PATH directories: {current_path.split(':')[:10]}...")  # Show first 10 dirs
-                
-                # Try to find 7z in current PATH
-                import shutil
-                z7_which_result = shutil.which('7z')
-                self.logger.info(f"which 7z result: {z7_which_result}")
-                
-                # Check resource manager paths (handles Windows .exe automatically)
-                z7_resource_path = resource_manager.get_binary_path('7z')
-                self.logger.info(f"ResourceManager 7z path: {z7_resource_path}")
-                
-                # Check if 7z exists in specific locations (platform-specific)
-                if platform.system() == "Windows":
-                    possible_locations = [
-                        resource_manager.base_path / '7z.exe',
-                        resource_manager.resources_path / '7z.exe',
-                        resource_manager.base_path / '7z',  # Also try without .exe
-                        resource_manager.resources_path / '7z',
-                    ]
-                else:
-                    possible_locations = [
-                        resource_manager.base_path / '7z',
-                        resource_manager.resources_path / '7z',
-                    ]
-                for loc in possible_locations:
-                    exists = loc.exists()
-                    self.logger.info(f"7z at {loc}: {'EXISTS' if exists else 'NOT FOUND'}")
-                    if exists:
-                        import stat
-                        st = loc.stat()
-                        executable = bool(st.st_mode & stat.S_IXUSR)
-                        self.logger.info(f"  Size: {st.st_size} bytes, Executable: {executable}")
-                        
-                        # Check if it's a symbolic link or regular file
-                        if loc.is_symlink():
-                            target = loc.readlink()
-                            self.logger.info(f"  Symlink target: {target}")
-                            # Check if target exists
-                            if loc.resolve().exists():
-                                resolved_st = loc.resolve().stat()
-                                self.logger.info(f"  Resolved size: {resolved_st.st_size} bytes")
-                            else:
-                                self.logger.error(f"  Symlink target does not exist!")
-                        
-                        # Check if file size is reasonable for 7z binary
-                        if st.st_size < 1024:  # Less than 1KB is suspicious
-                            self.logger.error(f"  ⚠️ 7z file too small, likely corrupted or invalid")
-                
-                # Test 7z availability with platform-specific handling
                 z7_cmd = '7z.exe' if platform.system() == "Windows" else '7z'
                 
                 try:
                     # Test if 7z is available
                     result = subprocess.run([z7_cmd], capture_output=True, timeout=5)
-                    self.logger.info(f"✅ {z7_cmd} tool is available for KCC")
-                    self.logger.info(f"7z stdout length: {len(result.stdout)} chars")
-                    self.logger.info(f"7z stderr length: {len(result.stderr)} chars")
+                    self.logger.debug(f"7z tool is available for KCC")
                 except FileNotFoundError:
-                    self.logger.error(f"❌ {z7_cmd} not found in PATH")
+                    self.logger.warning(f"7z not found in PATH, attempting to locate it")
                     # 7z not found in PATH, try to locate it
                     z7_path = resource_manager.get_binary_path('7z')
                     if z7_path and z7_path.exists():
@@ -475,37 +339,21 @@ class EPUBConverter:
                         current_path = os.environ.get('PATH', '')
                         path_sep = ';' if platform.system() == "Windows" else ':'
                         os.environ['PATH'] = f"{z7_dir}{path_sep}{current_path}"
-                        self.logger.info(f"🔧 Added 7z directory to PATH: {z7_dir}")
-                        self.logger.info(f"New PATH length: {len(os.environ['PATH'])} chars")
+                        self.logger.info(f"Added 7z directory to PATH: {z7_dir}")
                         
                         # Test again with proper command
                         z7_test_cmd = z7_path.name if z7_path.name.endswith('.exe') else z7_cmd
                         try:
                             result = subprocess.run([z7_test_cmd], capture_output=True, timeout=5)
-                            self.logger.info(f"✅ {z7_test_cmd} tool is now available after PATH update")
+                            self.logger.debug(f"7z tool is now available after PATH update")
                         except FileNotFoundError:
-                            self.logger.error(f"❌ {z7_test_cmd} still not found after PATH update")
+                            self.logger.error(f"7z still not found after PATH update")
                     else:
-                        self.logger.error(f"❌ 7z binary not found in bundle: {resource_manager.base_path}")
+                        self.logger.error(f"7z binary not found in bundle")
                 except subprocess.TimeoutExpired:
-                    self.logger.info(f"✅ {z7_cmd} tool is available (timeout during help display is normal)")
+                    self.logger.debug(f"7z tool is available (timeout during help display is normal)")
                 except Exception as e:
-                    self.logger.error(f"❌ Error testing {z7_cmd} availability: {e}")
-                
-                # Additional debugging: test 7z in a subprocess similar to how KCC calls it
-                self.logger.info("🔍 Testing 7z in subprocess (similar to KCC)...")
-                try:
-                    test_env = os.environ.copy()
-                    result = subprocess.run(
-                        [z7_cmd], 
-                        capture_output=True, 
-                        timeout=5, 
-                        env=test_env,
-                        cwd=str(resource_manager.get_working_directory())
-                    )
-                    self.logger.info(f"✅ {z7_cmd} subprocess test successful (returncode: {result.returncode})")
-                except Exception as e:
-                    self.logger.error(f"❌ {z7_cmd} subprocess test failed: {e}")
+                    self.logger.error(f"Error testing 7z availability: {e}")
 
                 # Run KCC conversion
                 kcc_args = [
@@ -537,14 +385,6 @@ class EPUBConverter:
                 old_stdout = sys.stdout
                 old_stderr = sys.stderr
                 
-                # Capture environment for debugging
-                env_copy = os.environ.copy()
-                current_cwd = os.getcwd()
-                self.logger.info(f"🔍 KCC execution environment:")
-                self.logger.info(f"  Working directory: {current_cwd}")
-                self.logger.info(f"  PATH starts with: {env_copy.get('PATH', '')[:200]}...")
-                self.logger.info(f"  KCC args: {kcc_args}")
-                
                 try:
                     # Redirect stdout/stderr to capture KCC output
                     sys.stdout = captured_stdout
@@ -553,51 +393,22 @@ class EPUBConverter:
                     try:
                         kcc_result = kcc_main(kcc_args)
                         success = kcc_result == 0
-                        self.logger.info(f"✅ KCC main returned: {kcc_result}")
+                        self.logger.debug(f"KCC main returned: {kcc_result}")
                     except SystemExit as e:
                         success = e.code == 0
-                        self.logger.info(f"🚪 KCC exited with code: {e.code}")
+                        self.logger.debug(f"KCC exited with code: {e.code}")
                     except Exception as e:
-                        self.logger.error(f"❌ KCC execution error: {e}")
+                        self.logger.error(f"KCC execution error: {e}")
                         success = False
                         
-                        # Enhanced debugging for subprocess errors
+                        # Log subprocess errors for debugging
                         if hasattr(e, 'cmd') and hasattr(e, 'returncode'):
-                            self.logger.error(f"  Command that failed: {e.cmd}")
-                            self.logger.error(f"  Return code: {e.returncode}")
+                            self.logger.error(f"Command that failed: {e.cmd}")
+                            self.logger.error(f"Return code: {e.returncode}")
                             if hasattr(e, 'stderr') and e.stderr:
-                                self.logger.error(f"  Process stderr: {e.stderr}")
+                                self.logger.error(f"Process stderr: {e.stderr}")
                             if hasattr(e, 'stdout') and e.stdout:
-                                self.logger.error(f"  Process stdout: {e.stdout}")
-                        
-                        # If it's a 7z wildcard issue, try to diagnose
-                        error_str = str(e)
-                        if "7z" in error_str and "*" in error_str:
-                            import re
-                            # Extract the failing path with wildcard
-                            path_match = re.search(r"'([^']*\*[^']*)'", error_str)
-                            if path_match:
-                                failed_path = path_match.group(1)
-                                self.logger.error(f"🔍 Diagnosing wildcard path issue:")
-                                self.logger.error(f"  Failed wildcard path: {failed_path}")
-                                
-                                # Check directory and files
-                                import glob
-                                dir_part = failed_path.rstrip('/*')
-                                self.logger.error(f"  Directory part: {dir_part}")
-                                self.logger.error(f"  Directory exists: {os.path.exists(dir_part)}")
-                                if os.path.exists(dir_part):
-                                    try:
-                                        files = glob.glob(failed_path)
-                                        self.logger.error(f"  Glob expansion finds: {len(files)} files")
-                                        if files:
-                                            self.logger.error(f"  First few files: {files[:3]}")
-                                        else:
-                                            # List actual contents
-                                            actual_files = os.listdir(dir_part)
-                                            self.logger.error(f"  Actual directory contents: {actual_files[:10]}")
-                                    except Exception as glob_e:
-                                        self.logger.error(f"  Error during glob: {glob_e}")
+                                self.logger.error(f"Process stdout: {e.stdout}")
                 
                 finally:
                     # Restore stdout/stderr
@@ -607,48 +418,21 @@ class EPUBConverter:
                     execution_time = time.time() - start_time
                     self.logger.info(f"KCC completed in {execution_time:.2f}s")
                     
-                                    # Log captured output for debugging
-                stdout_content = captured_stdout.getvalue()
-                stderr_content = captured_stderr.getvalue()
-                
-                if stdout_content:
-                    self.logger.info("KCC stdout:")
-                    for line in stdout_content.strip().split('\n')[:20]:  # Limit to first 20 lines
-                        if line.strip():
-                            self.logger.info(f"  {line}")
-                
-                if stderr_content:
-                    if success:
-                        self.logger.info("KCC stderr (info):")
-                    else:
-                        self.logger.error("KCC stderr (errors):")
-                    for line in stderr_content.strip().split('\n')[:20]:  # Limit to first 20 lines
-                        if line.strip():
-                            if success:
-                                self.logger.info(f"  {line}")
-                            else:
+                                                        # Log captured output for debugging
+                    stdout_content = captured_stdout.getvalue()
+                    stderr_content = captured_stderr.getvalue()
+                    
+                    if stdout_content:
+                        self.logger.debug("KCC stdout:")
+                        for line in stdout_content.strip().split('\n')[:10]:  # Limit to first 10 lines
+                            if line.strip():
+                                self.logger.debug(f"  {line}")
+                    
+                    if stderr_content and not success:
+                        self.logger.error("KCC stderr:")
+                        for line in stderr_content.strip().split('\n')[:10]:  # Limit to first 10 lines
+                            if line.strip():
                                 self.logger.error(f"  {line}")
-                
-                # Additional debugging: try to manually test the failing 7z command
-                if not success and "7z" in stderr_content:
-                    self.logger.error("🔍 Attempting to diagnose 7z command failure...")
-                    # Try to find the exact 7z command that failed from stderr
-                    import re
-                    z7_cmd_match = re.search(r"Command \['([^']+)',.*?'([^']*\*[^']*)'\]", stderr_content)
-                    if z7_cmd_match:
-                        failed_path = z7_cmd_match.group(2)
-                        self.logger.error(f"  Failed path with wildcard: {failed_path}")
-                        
-                        # Check if the directory exists
-                        import glob
-                        dir_part = failed_path.rstrip('/*')
-                        if os.path.exists(dir_part):
-                            files = glob.glob(failed_path)
-                            self.logger.error(f"  Directory exists, glob expansion finds {len(files)} files")
-                            if files:
-                                self.logger.error(f"  Sample files: {files[:3]}")
-                        else:
-                            self.logger.error(f"  Directory does not exist: {dir_part}")
 
             finally:
                 # Restore environment using ResourceManager
