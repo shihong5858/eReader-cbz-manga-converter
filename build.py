@@ -252,59 +252,146 @@ def get_data_files(target_platform: str) -> List[str]:
     ]
 
     # Add 7z binary for KCC support
-    # Try to find 7z using which command first, then fallback to common locations
     z7_path = None
+    
+    def find_real_7z_binary(candidate_path):
+        """Find the real 7z binary, following shell scripts if needed."""
+        if not os.path.exists(candidate_path):
+            return None
+            
+        # On Windows, prefer .exe files but accept non-.exe if they exist
+        if target_platform == "win32" or os.name == 'nt':
+            if not candidate_path.endswith('.exe'):
+                exe_path = candidate_path + '.exe'
+                if os.path.exists(exe_path):
+                    candidate_path = exe_path
+                    print(f"[INFO] Using .exe version: {exe_path}")
+                elif not os.path.exists(candidate_path):
+                    print(f"[WARNING] Windows 7z path not found: {candidate_path} or {exe_path}")
+                    return None
+                # If original path exists, continue with it (e.g., Git Bash environment)
+        
+        # Check if it's a shell script that points to the real binary (Unix systems)
+        if not (target_platform == "win32" or os.name == 'nt'):
+            try:
+                with open(candidate_path, 'r') as f:
+                    content = f.read()
+                
+                # Look for shell script pattern like p7zip uses
+                if content.startswith('#!') and '/lib/p7zip/7z' in content:
+                    # Extract the real binary path from the shell script
+                    import re
+                    match = re.search(r'"([^"]*lib/p7zip/7z)"', content)
+                    if match:
+                        real_binary = match.group(1)
+                        if os.path.exists(real_binary):
+                            print(f"[INFO] Found real 7z binary via shell script: {real_binary}")
+                            return real_binary
+            except:
+                pass
+        
+        # Check file size - real 7z binary should be substantial
+        try:
+            size = os.path.getsize(candidate_path)
+            if size < 1024:  # Less than 1KB is likely a script
+                print(f"[WARNING] 7z at {candidate_path} is too small ({size} bytes), likely a script")
+                return None
+        except:
+            pass
+        
+        return candidate_path
+    
+    # Try to find 7z using which command first
     try:
         result = subprocess.run(["which", "7z"], capture_output=True, text=True)
         if result.returncode == 0:
-            z7_path = result.stdout.strip()
-            print(f"[INFO] Found 7z using which: {z7_path}")
-            
-            # Resolve symlinks to get the actual binary
-            if os.path.islink(z7_path):
-                real_path = os.path.realpath(z7_path)
-                print(f"[INFO] 7z is a symlink, resolving to: {real_path}")
-                if os.path.exists(real_path):
-                    z7_path = real_path
-                else:
-                    print(f"[WARNING] Symlink target doesn't exist: {real_path}")
-                    z7_path = None
+            candidate = result.stdout.strip()
+            print(f"[INFO] Found 7z using which: {candidate}")
+            z7_path = find_real_7z_binary(candidate)
+            if z7_path:
+                print(f"[INFO] Real 7z binary: {z7_path}")
+            elif (target_platform == "win32" or os.name == 'nt') and os.path.exists(candidate):
+                # On Windows, if validation failed but file exists, use it anyway (Git Bash scenario)
+                print(f"[INFO] Using which result despite validation (Git Bash environment): {candidate}")
+                z7_path = candidate
     except Exception as e:
         print(f"[WARNING] which command failed: {e}")
     
-    # If which didn't work, try common locations
-    if not z7_path or not os.path.exists(z7_path):
-        z7_locations = [
-            "/opt/homebrew/bin/7z", 
-            "/usr/local/bin/7z", 
-            "/usr/bin/7z",
-            # Try direct path to p7zip binary on macOS
-            "/opt/homebrew/Cellar/p7zip/17.05/bin/7z",
-        ]
-        for location in z7_locations:
-            if os.path.exists(location):
-                # Resolve symlinks if needed
-                if os.path.islink(location):
-                    real_location = os.path.realpath(location)
-                    if os.path.exists(real_location):
-                        z7_path = real_location
-                        print(f"[INFO] Found and resolved 7z symlink: {location} -> {real_location}")
-                    else:
-                        print(f"[WARNING] Symlink target doesn't exist: {real_location}")
-                        continue
-                else:
-                    z7_path = location
-                    print(f"[INFO] Found 7z at common location: {z7_path}")
+    # If which didn't work or found a script, try direct locations
+    if not z7_path:
+        if target_platform == "win32" or os.name == 'nt':
+            # Windows locations
+            z7_locations = [
+                "C:/Program Files/7-Zip/7z.exe",
+                "C:/Program Files (x86)/7-Zip/7z.exe",
+                "C:/ProgramData/chocolatey/bin/7z.exe",
+                "C:/ProgramData/chocolatey/lib/7zip*/tools/7z.exe",
+                "C:/tools/7zip/7z.exe",
+            ]
+        else:
+            # Unix/Linux/macOS locations
+            z7_locations = [
+                # Try the real binary locations first (macOS homebrew)
+                "/opt/homebrew/Cellar/p7zip/*/lib/p7zip/7z",
+                "/usr/local/Cellar/p7zip/*/lib/p7zip/7z", 
+                # Linux package manager locations
+                "/usr/bin/7z",
+                "/usr/local/bin/7z",
+                # Symlinked locations (macOS)
+                "/opt/homebrew/bin/7z", 
+                "/usr/local/bin/7z",
+            ]
+        
+        import glob
+        for location_pattern in z7_locations:
+            # Handle glob patterns
+            if '*' in location_pattern:
+                matches = glob.glob(location_pattern)
+                for match in sorted(matches, reverse=True):  # Use latest version
+                    z7_path = find_real_7z_binary(match)
+                    if z7_path:
+                        print(f"[INFO] Found 7z via pattern {location_pattern}: {z7_path}")
+                        break
+            else:
+                z7_path = find_real_7z_binary(location_pattern)
+                if z7_path:
+                    print(f"[INFO] Found 7z at {location_pattern}: {z7_path}")
+                    break
+            
+            if z7_path:
                 break
     
     if z7_path and os.path.exists(z7_path):
         data_files.append(f"{z7_path}{separator}.")
         print(f"[INFO] Adding 7z binary: {z7_path}")
         
-        # Also add the directory if it contains dependencies (but not system directories)
+        # Check for and add required libraries in the same directory
         z7_dir = os.path.dirname(z7_path)
-        if z7_dir not in ["/usr/bin", "/bin", "/usr/local/bin"]:  # Don't package system directories
-            print(f"[INFO] Also checking 7z directory for dependencies: {z7_dir}")
+        system_dirs = ["/usr/bin", "/bin", "/usr/local/bin"]
+        
+        # Don't package system directories or Windows Program Files
+        if (z7_dir not in system_dirs and 
+            not z7_dir.lower().startswith("c:/program files") and 
+            not z7_dir.lower().startswith("c:\\program files")):
+            
+            print(f"[INFO] Checking 7z directory for dependencies: {z7_dir}")
+            
+            if target_platform == "win32" or os.name == 'nt':
+                # Windows dependencies
+                dep_files = ["7z.dll", "7za.exe", "7zr.exe"]
+            else:
+                # Unix dependencies  
+                dep_files = ["7z.so", "7za", "7zr"]
+            
+            for dep_file in dep_files:
+                dep_path = os.path.join(z7_dir, dep_file)
+                if os.path.exists(dep_path):
+                    data_files.append(f"{dep_path}{separator}.")
+                    print(f"[INFO] Adding 7z dependency: {dep_path}")
+                else:
+                    print(f"[INFO] Optional dependency not found: {dep_path}")
+        else:
+            print(f"[INFO] Skipping dependency check for system directory: {z7_dir}")
     else:
         print("[WARNING] 7z binary not found, KCC may fail")
         print("[WARNING] Checked locations and 'which 7z' command")

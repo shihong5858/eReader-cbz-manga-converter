@@ -53,11 +53,18 @@ if getattr(sys, 'frozen', False):
         kcc_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
         # Add 7z to PATH for KCC support in packaged environment
         # Try different possible locations for 7z in the packaged app
-        z7_candidates = [
-            os.path.join(sys._MEIPASS, '7z'),
-            os.path.join(sys._MEIPASS, '7z.exe'),  # Windows
-            os.path.join(sys._MEIPASS, 'bin', '7z'),
-        ]
+        import platform
+        if platform.system() == "Windows":
+            z7_candidates = [
+                os.path.join(sys._MEIPASS, '7z.exe'),
+                os.path.join(sys._MEIPASS, 'bin', '7z.exe'),
+                os.path.join(sys._MEIPASS, 'tools', '7z.exe'),
+            ]
+        else:
+            z7_candidates = [
+                os.path.join(sys._MEIPASS, '7z'),
+                os.path.join(sys._MEIPASS, 'bin', '7z'),
+            ]
         
         z7_found = False
         for z7_path in z7_candidates:
@@ -82,11 +89,19 @@ if getattr(sys, 'frozen', False):
         kcc_dir = os.path.join(resources_dir, 'kindlecomicconverter')
         # Add 7z to PATH for KCC support in App Bundle
         # Try different possible locations for 7z in the App Bundle
-        z7_candidates = [
-            os.path.join(resources_dir, '7z'),
-            os.path.join(resources_dir, 'bin', '7z'),
-            os.path.join(app_dir, '7z'),  # Sometimes in the same dir as executable
-        ]
+        import platform
+        if platform.system() == "Windows":
+            z7_candidates = [
+                os.path.join(resources_dir, '7z.exe'),
+                os.path.join(resources_dir, 'bin', '7z.exe'),
+                os.path.join(app_dir, '7z.exe'),  # Sometimes in the same dir as executable
+            ]
+        else:
+            z7_candidates = [
+                os.path.join(resources_dir, '7z'),
+                os.path.join(resources_dir, 'bin', '7z'),
+                os.path.join(app_dir, '7z'),  # Sometimes in the same dir as executable
+            ]
         
         z7_found = False
         for z7_path in z7_candidates:

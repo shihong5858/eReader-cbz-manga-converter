@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import platform
 import re
 import shutil
 import sys
@@ -292,15 +293,23 @@ class EPUBConverter:
                 z7_which_result = shutil.which('7z')
                 self.logger.info(f"which 7z result: {z7_which_result}")
                 
-                # Check resource manager paths
+                # Check resource manager paths (handles Windows .exe automatically)
                 z7_resource_path = resource_manager.get_binary_path('7z')
                 self.logger.info(f"ResourceManager 7z path: {z7_resource_path}")
                 
-                # Check if 7z exists in specific locations
-                possible_locations = [
-                    resource_manager.base_path / '7z',
-                    resource_manager.resources_path / '7z',
-                ]
+                # Check if 7z exists in specific locations (platform-specific)
+                if platform.system() == "Windows":
+                    possible_locations = [
+                        resource_manager.base_path / '7z.exe',
+                        resource_manager.resources_path / '7z.exe',
+                        resource_manager.base_path / '7z',  # Also try without .exe
+                        resource_manager.resources_path / '7z',
+                    ]
+                else:
+                    possible_locations = [
+                        resource_manager.base_path / '7z',
+                        resource_manager.resources_path / '7z',
+                    ]
                 for loc in possible_locations:
                     exists = loc.exists()
                     self.logger.info(f"7z at {loc}: {'EXISTS' if exists else 'NOT FOUND'}")
@@ -325,51 +334,56 @@ class EPUBConverter:
                         if st.st_size < 1024:  # Less than 1KB is suspicious
                             self.logger.error(f"  ⚠️ 7z file too small, likely corrupted or invalid")
                 
+                # Test 7z availability with platform-specific handling
+                z7_cmd = '7z.exe' if platform.system() == "Windows" else '7z'
+                
                 try:
                     # Test if 7z is available
-                    result = subprocess.run(['7z'], capture_output=True, timeout=5)
-                    self.logger.info("✅ 7z tool is available for KCC")
+                    result = subprocess.run([z7_cmd], capture_output=True, timeout=5)
+                    self.logger.info(f"✅ {z7_cmd} tool is available for KCC")
                     self.logger.info(f"7z stdout length: {len(result.stdout)} chars")
                     self.logger.info(f"7z stderr length: {len(result.stderr)} chars")
                 except FileNotFoundError:
-                    self.logger.error("❌ 7z not found in PATH")
+                    self.logger.error(f"❌ {z7_cmd} not found in PATH")
                     # 7z not found in PATH, try to locate it
                     z7_path = resource_manager.get_binary_path('7z')
                     if z7_path and z7_path.exists():
                         # Add the directory containing 7z to PATH
                         z7_dir = str(z7_path.parent)
                         current_path = os.environ.get('PATH', '')
-                        os.environ['PATH'] = f"{z7_dir}:{current_path}"
+                        path_sep = ';' if platform.system() == "Windows" else ':'
+                        os.environ['PATH'] = f"{z7_dir}{path_sep}{current_path}"
                         self.logger.info(f"🔧 Added 7z directory to PATH: {z7_dir}")
                         self.logger.info(f"New PATH length: {len(os.environ['PATH'])} chars")
                         
-                        # Test again
+                        # Test again with proper command
+                        z7_test_cmd = z7_path.name if z7_path.name.endswith('.exe') else z7_cmd
                         try:
-                            result = subprocess.run(['7z'], capture_output=True, timeout=5)
-                            self.logger.info("✅ 7z tool is now available after PATH update")
+                            result = subprocess.run([z7_test_cmd], capture_output=True, timeout=5)
+                            self.logger.info(f"✅ {z7_test_cmd} tool is now available after PATH update")
                         except FileNotFoundError:
-                            self.logger.error("❌ 7z still not found after PATH update")
+                            self.logger.error(f"❌ {z7_test_cmd} still not found after PATH update")
                     else:
                         self.logger.error(f"❌ 7z binary not found in bundle: {resource_manager.base_path}")
                 except subprocess.TimeoutExpired:
-                    self.logger.info("✅ 7z tool is available (timeout during help display is normal)")
+                    self.logger.info(f"✅ {z7_cmd} tool is available (timeout during help display is normal)")
                 except Exception as e:
-                    self.logger.error(f"❌ Error testing 7z availability: {e}")
+                    self.logger.error(f"❌ Error testing {z7_cmd} availability: {e}")
                 
                 # Additional debugging: test 7z in a subprocess similar to how KCC calls it
                 self.logger.info("🔍 Testing 7z in subprocess (similar to KCC)...")
                 try:
                     test_env = os.environ.copy()
                     result = subprocess.run(
-                        ['7z'], 
+                        [z7_cmd], 
                         capture_output=True, 
                         timeout=5, 
                         env=test_env,
                         cwd=str(resource_manager.get_working_directory())
                     )
-                    self.logger.info(f"✅ 7z subprocess test successful (returncode: {result.returncode})")
+                    self.logger.info(f"✅ {z7_cmd} subprocess test successful (returncode: {result.returncode})")
                 except Exception as e:
-                    self.logger.error(f"❌ 7z subprocess test failed: {e}")
+                    self.logger.error(f"❌ {z7_cmd} subprocess test failed: {e}")
 
                 # Run KCC conversion
                 kcc_args = [

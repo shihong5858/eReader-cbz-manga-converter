@@ -154,12 +154,20 @@ class ResourceManager:
     def get_binary_path(self, binary_name: str) -> Optional[Path]:
         """Get path to a bundled binary."""
         from .logger_config import is_debug_enabled
+        import platform
         
-        # Check multiple possible locations
-        candidate_paths = [
-            self._base_path / binary_name,
-            self._resources_path / binary_name,
-        ]
+        # Add .exe extension for Windows if not already present
+        if platform.system() == "Windows" and not binary_name.endswith('.exe'):
+            binary_name_exe = binary_name + '.exe'
+        else:
+            binary_name_exe = binary_name
+        
+        # Check multiple possible locations for both with and without .exe
+        candidate_paths = []
+        for base_path in [self._base_path, self._resources_path]:
+            candidate_paths.append(base_path / binary_name_exe)
+            if platform.system() == "Windows" and binary_name != binary_name_exe:
+                candidate_paths.append(base_path / binary_name)  # Also try without .exe
         
         # Remove duplicates while preserving order
         seen = set()
