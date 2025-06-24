@@ -281,9 +281,17 @@ class EPUBConverter:
                     self.logger.info(f"Changed to KCC working directory: {kcc_working_dir}")
                     
                     # For macOS App Bundle, ensure 7z.so is accessible from current directory
+                    self.logger.info(f"🔍 Checking if 7z.so setup needed...")
+                    self.logger.info(f"  frozen: {getattr(sys, 'frozen', False)}")
+                    self.logger.info(f"  platform: {platform.system()}")
+                    self.logger.info(f"  executable: {sys.executable}")
+                    self.logger.info(f"  is_app_bundle: {'.app/Contents/' in sys.executable}")
+                    
                     if (getattr(sys, 'frozen', False) and 
-                        not hasattr(sys, '_MEIPASS') and  # App Bundle, not PyInstaller
-                        platform.system() == "Darwin"):
+                        platform.system() == "Darwin" and
+                        '.app/Contents/' in sys.executable):  # macOS App Bundle
+                        
+                        self.logger.info("🔧 Setting up 7z.so for macOS App Bundle...")
                         
                         z7_so_source = resource_manager.base_path / "7z.so"
                         z7_so_target = Path.cwd() / "7z.so"
