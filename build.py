@@ -353,40 +353,57 @@ def build_package(target_platform: Optional[str] = None):
         )
         print_success("Build completed successfully!")
 
-        # macOS specific post-build cleanup
+        # Handle macOS .app bundle
         if target_platform == "darwin":
-            # Ensure only .app bundle exists in dist/
-            app_name = "eReader CBZ Manga Converter.app"
-            app_path = DIST_DIR / app_name
+            app_name = "eReader CBZ Manga Converter"
+            expected_path = DIST_DIR / f"{app_name}.app"
             
-            if app_path.exists():
-                print(f"  [INFO] Found .app bundle: {app_name}")
+            if expected_path.exists():
+                print(f"  [INFO] Found .app bundle: {app_name}.app")
                 
-                # Remove any other files/folders that might have been created
-                for item in DIST_DIR.iterdir():
-                    if item.name != app_name and item.name != ".DS_Store":
-                        if item.is_dir():
-                            shutil.rmtree(item)
-                            print(f"  [INFO] Removed extra directory: {item.name}")
-                        else:
-                            item.unlink()
-                            print(f"  [INFO] Removed extra file: {item.name}")
+                # Update Info.plist with correct version
+                info_plist_path = expected_path / "Contents/Info.plist"
+                if info_plist_path.exists():
+                    try:
+                        import plistlib
+                        
+                        # Read current Info.plist
+                        with open(info_plist_path, 'rb') as f:
+                            plist_data = plistlib.load(f)
+                        
+                        # Update version information
+                        plist_data['CFBundleShortVersionString'] = VERSION
+                        plist_data['CFBundleVersion'] = VERSION
+                        
+                        # Write back
+                        with open(info_plist_path, 'wb') as f:
+                            plistlib.dump(plist_data, f)
+                        
+                        print(f"  [INFO] Updated Info.plist with version {VERSION}")
+                        
+                    except Exception as e:
+                        print(f"  [WARNING] Failed to update Info.plist: {e}")
                 
-                # Add ad-hoc code signing to prevent App Translocation
-                print(f"  [INFO] Signing app to prevent App Translocation...")
+                # Remove extra directory if it exists
+                extra_dir = DIST_DIR / app_name
+                if extra_dir.exists() and extra_dir.is_dir():
+                    import shutil
+                    shutil.rmtree(extra_dir)
+                    print(f"  [INFO] Removed extra directory: {app_name}")
+                
+                # Code signing
                 try:
-                    subprocess.run([
-                        "codesign", 
-                        "--force", 
-                        "--deep", 
-                        "--sign", "-",  # Ad-hoc signature
-                        str(app_path)
-                    ], check=True, capture_output=True)
-                    print(f"  [INFO] App signed successfully")
-                except subprocess.CalledProcessError as e:
+                    print("  [INFO] Signing app to prevent App Translocation...")
+                    sign_result = subprocess.run(
+                        ["codesign", "--force", "--deep", "--sign", "-", str(expected_path)],
+                        capture_output=True, text=True
+                    )
+                    if sign_result.returncode == 0:
+                        print("  [INFO] App signed successfully")
+                    else:
+                        print(f"  [WARNING] Code signing failed: {sign_result.stderr}")
+                except Exception as e:
                     print(f"  [WARNING] Code signing failed: {e}")
-                    print(f"  [WARNING] App may be subject to App Translocation")
-                    
             else:
                 print(f"  [WARNING] Expected .app bundle not found: {app_name}")
 
