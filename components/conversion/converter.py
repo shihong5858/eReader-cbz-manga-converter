@@ -281,13 +281,43 @@ class EPUBConverter:
                 except Exception as e:
                     raise RuntimeError(f"Failed to change to KCC directory: {e}")
 
-                # Verify 7z availability before KCC execution
+                # Verify 7z availability before KCC execution with detailed logging
                 import subprocess
+                current_path = os.environ.get('PATH', '')
+                self.logger.info(f"Current PATH length: {len(current_path)} chars")
+                self.logger.info(f"PATH directories: {current_path.split(':')[:10]}...")  # Show first 10 dirs
+                
+                # Try to find 7z in current PATH
+                import shutil
+                z7_which_result = shutil.which('7z')
+                self.logger.info(f"which 7z result: {z7_which_result}")
+                
+                # Check resource manager paths
+                z7_resource_path = resource_manager.get_binary_path('7z')
+                self.logger.info(f"ResourceManager 7z path: {z7_resource_path}")
+                
+                # Check if 7z exists in specific locations
+                possible_locations = [
+                    resource_manager.base_path / '7z',
+                    resource_manager.resources_path / '7z',
+                ]
+                for loc in possible_locations:
+                    exists = loc.exists()
+                    self.logger.info(f"7z at {loc}: {'EXISTS' if exists else 'NOT FOUND'}")
+                    if exists:
+                        import stat
+                        st = loc.stat()
+                        executable = bool(st.st_mode & stat.S_IXUSR)
+                        self.logger.info(f"  Size: {st.st_size} bytes, Executable: {executable}")
+                
                 try:
                     # Test if 7z is available
                     result = subprocess.run(['7z'], capture_output=True, timeout=5)
-                    self.logger.info("7z tool is available for KCC")
+                    self.logger.info("✅ 7z tool is available for KCC")
+                    self.logger.info(f"7z stdout length: {len(result.stdout)} chars")
+                    self.logger.info(f"7z stderr length: {len(result.stderr)} chars")
                 except FileNotFoundError:
+                    self.logger.error("❌ 7z not found in PATH")
                     # 7z not found in PATH, try to locate it
                     z7_path = resource_manager.get_binary_path('7z')
                     if z7_path and z7_path.exists():
@@ -295,20 +325,36 @@ class EPUBConverter:
                         z7_dir = str(z7_path.parent)
                         current_path = os.environ.get('PATH', '')
                         os.environ['PATH'] = f"{z7_dir}:{current_path}"
-                        self.logger.info(f"Added 7z directory to PATH: {z7_dir}")
+                        self.logger.info(f"🔧 Added 7z directory to PATH: {z7_dir}")
+                        self.logger.info(f"New PATH length: {len(os.environ['PATH'])} chars")
                         
                         # Test again
                         try:
                             result = subprocess.run(['7z'], capture_output=True, timeout=5)
-                            self.logger.info("7z tool is now available after PATH update")
+                            self.logger.info("✅ 7z tool is now available after PATH update")
                         except FileNotFoundError:
-                            self.logger.warning("7z still not found after PATH update")
+                            self.logger.error("❌ 7z still not found after PATH update")
                     else:
-                        self.logger.warning(f"7z binary not found in bundle: {resource_manager.base_path}")
+                        self.logger.error(f"❌ 7z binary not found in bundle: {resource_manager.base_path}")
                 except subprocess.TimeoutExpired:
-                    self.logger.info("7z tool is available (timeout during help display is normal)")
+                    self.logger.info("✅ 7z tool is available (timeout during help display is normal)")
                 except Exception as e:
-                    self.logger.warning(f"Error testing 7z availability: {e}")
+                    self.logger.error(f"❌ Error testing 7z availability: {e}")
+                
+                # Additional debugging: test 7z in a subprocess similar to how KCC calls it
+                self.logger.info("🔍 Testing 7z in subprocess (similar to KCC)...")
+                try:
+                    test_env = os.environ.copy()
+                    result = subprocess.run(
+                        ['7z'], 
+                        capture_output=True, 
+                        timeout=5, 
+                        env=test_env,
+                        cwd=str(resource_manager.get_working_directory())
+                    )
+                    self.logger.info(f"✅ 7z subprocess test successful (returncode: {result.returncode})")
+                except Exception as e:
+                    self.logger.error(f"❌ 7z subprocess test failed: {e}")
 
                 # Run KCC conversion
                 kcc_args = [
@@ -340,6 +386,14 @@ class EPUBConverter:
                 old_stdout = sys.stdout
                 old_stderr = sys.stderr
                 
+                # Capture environment for debugging
+                env_copy = os.environ.copy()
+                current_cwd = os.getcwd()
+                self.logger.info(f"🔍 KCC execution environment:")
+                self.logger.info(f"  Working directory: {current_cwd}")
+                self.logger.info(f"  PATH starts with: {env_copy.get('PATH', '')[:200]}...")
+                self.logger.info(f"  KCC args: {kcc_args}")
+                
                 try:
                     # Redirect stdout/stderr to capture KCC output
                     sys.stdout = captured_stdout
@@ -348,10 +402,12 @@ class EPUBConverter:
                     try:
                         kcc_result = kcc_main(kcc_args)
                         success = kcc_result == 0
+                        self.logger.info(f"✅ KCC main returned: {kcc_result}")
                     except SystemExit as e:
                         success = e.code == 0
+                        self.logger.info(f"🚪 KCC exited with code: {e.code}")
                     except Exception as e:
-                        self.logger.error(f"KCC execution error: {e}")
+                        self.logger.error(f"❌ KCC execution error: {e}")
                         success = False
                 
                 finally:
@@ -362,13 +418,27 @@ class EPUBConverter:
                     execution_time = time.time() - start_time
                     self.logger.info(f"KCC completed in {execution_time:.2f}s")
                     
-                    # Log captured output only if there are errors
+                    # Log captured output for debugging
+                    stdout_content = captured_stdout.getvalue()
                     stderr_content = captured_stderr.getvalue()
-                    if stderr_content and not success:
-                        self.logger.error("KCC reported errors:")
-                        for line in stderr_content.strip().split('\n')[:10]:  # Limit to first 10 lines
+                    
+                    if stdout_content:
+                        self.logger.info("KCC stdout:")
+                        for line in stdout_content.strip().split('\n')[:20]:  # Limit to first 20 lines
                             if line.strip():
-                                self.logger.error(f"  {line}")
+                                self.logger.info(f"  {line}")
+                    
+                    if stderr_content:
+                        if success:
+                            self.logger.info("KCC stderr (info):")
+                        else:
+                            self.logger.error("KCC stderr (errors):")
+                        for line in stderr_content.strip().split('\n')[:20]:  # Limit to first 20 lines
+                            if line.strip():
+                                if success:
+                                    self.logger.info(f"  {line}")
+                                else:
+                                    self.logger.error(f"  {line}")
 
             finally:
                 # Restore environment using ResourceManager

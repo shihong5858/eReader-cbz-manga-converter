@@ -184,27 +184,47 @@ class ResourceManager:
     
     def setup_binary_environment(self) -> Optional[str]:
         """Setup environment for binary tools (like 7z)."""
+        from .logger_config import is_debug_enabled
+        
         original_path = os.environ.get('PATH', '')
+        
+        if is_debug_enabled():
+            self.logger.debug("🔧 Setting up binary environment...")
+            self.logger.debug(f"  frozen: {getattr(sys, 'frozen', False)}")
+            self.logger.debug(f"  has _MEIPASS: {hasattr(sys, '_MEIPASS')}")
+            self.logger.debug(f"  base_path: {self._base_path}")
+            self.logger.debug(f"  resources_path: {self._resources_path}")
         
         if getattr(sys, 'frozen', False):
             paths_to_add = []
             
             # Add base path to PATH for binary access
             paths_to_add.append(str(self._base_path))
+            if is_debug_enabled():
+                self.logger.debug(f"  Added base_path: {self._base_path}")
             
             # For macOS App Bundle, also add Resources directory
             if not hasattr(sys, '_MEIPASS'):  # macOS App Bundle
                 paths_to_add.append(str(self._resources_path))
+                if is_debug_enabled():
+                    self.logger.debug(f"  Added Resources directory for macOS App Bundle: {self._resources_path}")
+            else:
+                if is_debug_enabled():
+                    self.logger.debug("  Skipping Resources directory (not macOS App Bundle)")
             
             # Create new PATH with all directories
             new_path = ':'.join(paths_to_add) + ':' + original_path
             os.environ['PATH'] = new_path
             
-            from .logger_config import is_debug_enabled
             if is_debug_enabled():
-                self.logger.debug(f"Updated PATH with binary directories: {paths_to_add}")
+                self.logger.debug(f"🔧 Updated PATH with binary directories: {paths_to_add}")
+                self.logger.debug(f"  Original PATH length: {len(original_path)} chars")
+                self.logger.debug(f"  New PATH length: {len(new_path)} chars")
                 
             return original_path
+        else:
+            if is_debug_enabled():
+                self.logger.debug("  Not in frozen environment, no PATH changes needed")
         
         return None
     
