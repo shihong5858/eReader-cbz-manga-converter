@@ -11,19 +11,21 @@ from pathlib import Path
 
 # Import ResourceManager
 from ..resource_manager import get_resource_manager
+from ..logger_config import get_logger
 
 # Initialize ResourceManager
 resource_manager = get_resource_manager()
 
 # Add KCC module path using ResourceManager
 if not resource_manager.add_kcc_to_path():
-    print(f"Warning: KCC path not found at {resource_manager.kcc_path}")
+    logger = get_logger(__name__)
+    logger.warning(f"KCC path not found at {resource_manager.kcc_path}")
 
 class EPUBConverter:
     """EPUB to CBZ converter with progress tracking"""
 
     def __init__(self):
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
     def convert(self, input_file, output_directory, progress_callback=None, status_callback=None):
         """

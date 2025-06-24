@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QDragEnterEvent, QDropEvent
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from components.conversion import ConversionWorker
 from components.resource_manager import get_resource_manager
+from components.logger_config import enable_debug, disable_debug, is_debug_enabled
 
 # Set system monospace font based on platform
 if sys.platform == "darwin":
@@ -33,7 +34,8 @@ else:
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("EPUB to CBZ Converter")
+        self.base_title = "EPUB to CBZ Converter"
+        self.setWindowTitle(self.base_title)
         self.logger = logging.getLogger(__name__)
 
         # Set initial window size including the hidden options area
@@ -305,7 +307,7 @@ class MainWindow(QMainWindow):
         # Initially hide options
         self.options_container.hide()
         self.device_section.setFixedHeight(50)  # Height without options
-        self.options_height = 70  # Restored to 70px as a reasonable height
+        self.options_height = 70  # Restored to original height
 
         # Add progress section with fixed margins
         progress_layout = QVBoxLayout()
@@ -382,6 +384,12 @@ class MainWindow(QMainWindow):
         self.current_file_index = 0
         self.worker = None
         self.update_convert_button_state()
+        
+        # Setup hidden debug controls
+        self._setup_hidden_debug_controls()
+        
+        # Update title based on initial debug state
+        self._update_title_for_debug_state()
 
     def select_input_path(self, event=None):
         dialog = QFileDialog(self)
@@ -832,3 +840,41 @@ class MainWindow(QMainWindow):
             self.device_section.setFixedHeight(50)
             # Decrease window height exactly by options_height
             self.setFixedHeight(self.height() - self.options_height)
+
+    def _setup_hidden_debug_controls(self):
+        """Setup hidden debug controls via keyboard shortcuts."""
+        # Ctrl+Shift+D: Toggle debug mode
+        debug_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        debug_shortcut.activated.connect(self._toggle_debug_mode)
+
+    def _update_title_for_debug_state(self):
+        """Update window title based on debug state."""
+        if is_debug_enabled():
+            self.setWindowTitle(f"{self.base_title} [DEBUG]")
+        else:
+            self.setWindowTitle(self.base_title)
+
+    def _toggle_debug_mode(self):
+        """Hidden debug mode toggle via keyboard shortcut."""
+        try:
+            if is_debug_enabled():
+                disable_debug()
+                self.logger.info("Debug mode disabled via keyboard shortcut")
+                status_text = "Debug mode disabled"
+            else:
+                enable_debug()
+                self.logger.info("Debug mode enabled via keyboard shortcut")
+                status_text = "Debug mode enabled (log file created on Desktop)"
+            
+            # Update window title based on new debug state
+            self._update_title_for_debug_state()
+            
+            # Briefly show status
+            if hasattr(self, 'progress_status'):
+                self.progress_status.setText(status_text)
+                QTimer.singleShot(3000, lambda: self.progress_status.setText(""))
+                
+        except Exception as e:
+            self.logger.error(f"Failed to toggle debug mode: {e}")
+
+

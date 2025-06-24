@@ -19,39 +19,16 @@ def fix_working_directory():
 # Fix working directory immediately
 fix_working_directory()
 
-# Setup detailed logging to file
-def setup_logging():
-    """Setup logging to both console and file for debugging"""
-    # Create log file on Desktop
-    desktop_path = os.path.expanduser("~/Desktop")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = f"eReader_CBZ_Debug_{timestamp}.log"
-    log_file_path = os.path.join(desktop_path, log_filename)
-    
-    # Configure logging
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file_path, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
-    )
-    
-    logger = logging.getLogger(__name__)
-    logger.info("="*60)
-    logger.info("eReader CBZ Manga Converter - Debug Session Started")
-    logger.info(f"Log file: {log_file_path}")
-    
-    # Log ResourceManager debug info
-    debug_info = resource_manager.debug_info()
-    for key, value in debug_info.items():
-        logger.info(f"{key}: {value}")
-    
-    logger.info("="*60)
+# Import the new dynamic logging system
+from components.logger_config import setup_logging, get_logger
 
-# Setup logging immediately
-setup_logging()
+# Setup logging immediately (always save to desktop, debug mode starts off)
+log_file_path = setup_logging(debug_mode=False)
+logger = get_logger(__name__)
+
+# Log system information for debugging
+from components.logger_config import _dynamic_logger
+_dynamic_logger.log_system_info()
 
 # Fix numpy/OpenBLAS stack overflow on macOS ARM64 BEFORE importing any modules
 if sys.platform == "darwin":
@@ -71,8 +48,6 @@ from PySide6.QtWidgets import QApplication
 
 from components.conversion import EPUBConverter
 from gui.mainwindow import MainWindow
-
-logger = logging.getLogger(__name__)
 
 # Add KCC directory to Python path using ResourceManager
 kcc_added = resource_manager.add_kcc_to_path()

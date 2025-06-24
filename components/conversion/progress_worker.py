@@ -4,6 +4,7 @@ import os
 from PySide6.QtCore import QThread, Signal
 
 from .converter import EPUBConverter
+from ..logger_config import get_logger
 
 
 class ConversionWorker(QThread):
@@ -38,7 +39,7 @@ class ConversionWorker(QThread):
         self._current_step = ""
         self._current_progress = 0
         self.converter = EPUBConverter()
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
 
     def update_progress(self, message):
         """Update progress based on the current processing step."""

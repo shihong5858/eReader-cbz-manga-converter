@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.3] - 2025-06-24
+
+### Added
+- Dynamic debug mode with hidden keyboard shortcut (Ctrl+Shift+D)
+- Runtime logging system for distributed application troubleshooting
+
+### Fixed
+- Unified version management across all project files
+- Build artifacts now use consistent version numbering
+
+## [1.2.2] - 2025-06-02
+
+### Fixed
+- ResourceManager path handling for macOS app bundle structure
+- KCC import issues in App Translocation environment
+- 50% crash issue during conversion process in macOS app
+- Path consistency between Frameworks and Resources directories
+
 ## [1.2.1] - 2025-06-02
 
 - Fixed 50% crash issue during conversion process in macOS app
