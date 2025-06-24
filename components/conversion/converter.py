@@ -296,24 +296,110 @@ class EPUBConverter:
                         z7_so_source = resource_manager.base_path / "7z.so"
                         z7_so_target = Path.cwd() / "7z.so"
                         
+                        self.logger.info(f"  7z.so source path: {z7_so_source}")
+                        self.logger.info(f"  7z.so target path: {z7_so_target}")
+                        self.logger.info(f"  Current working directory: {Path.cwd()}")
+                        
+                        # Check source file
+                        if z7_so_source.exists():
+                            source_size = z7_so_source.stat().st_size
+                            self.logger.info(f"  ✅ Source 7z.so exists: {source_size} bytes")
+                        else:
+                            self.logger.error(f"  ❌ Source 7z.so NOT found: {z7_so_source}")
+                            # Check alternative locations
+                            alt_locations = [
+                                resource_manager.base_path.parent / "Frameworks" / "7z.so",
+                                resource_manager.resources_path / "7z.so",
+                            ]
+                            for alt_path in alt_locations:
+                                if alt_path.exists():
+                                    self.logger.info(f"  🔍 Found alternative 7z.so: {alt_path}")
+                                    z7_so_source = alt_path
+                                    break
+                                else:
+                                    self.logger.info(f"  ❌ Not found at: {alt_path}")
+                        
+                        # Check target file
+                        if z7_so_target.exists():
+                            target_size = z7_so_target.stat().st_size
+                            self.logger.info(f"  ℹ️  Target 7z.so already exists: {target_size} bytes")
+                            # Verify it's working
+                            if target_size > 1000000:  # Should be ~3MB
+                                self.logger.info(f"  ✅ Existing 7z.so looks valid, skipping setup")
+                            else:
+                                self.logger.warning(f"  ⚠️  Existing 7z.so seems too small, will replace")
+                                try:
+                                    z7_so_target.unlink()
+                                    self.logger.info(f"  🗑️  Removed invalid 7z.so")
+                                except Exception as e:
+                                    self.logger.error(f"  ❌ Failed to remove invalid 7z.so: {e}")
+                        else:
+                            self.logger.info(f"  ℹ️  Target 7z.so does not exist, will create")
+                        
+                        # Proceed with copy/link if needed
                         if z7_so_source.exists() and not z7_so_target.exists():
+                            self.logger.info(f"  🔧 Attempting to set up 7z.so...")
+                            
+                            # Try copy first
                             try:
                                 import shutil
+                                self.logger.info(f"  📋 Copying 7z.so: {z7_so_source} -> {z7_so_target}")
                                 shutil.copy2(str(z7_so_source), str(z7_so_target))
-                                self.logger.info(f"Copied 7z.so to working directory: {z7_so_target}")
+                                
+                                # Verify copy
+                                if z7_so_target.exists():
+                                    copied_size = z7_so_target.stat().st_size
+                                    original_size = z7_so_source.stat().st_size
+                                    self.logger.info(f"  ✅ Copy successful! Original: {original_size} bytes, Copied: {copied_size} bytes")
+                                    
+                                    if copied_size != original_size:
+                                        self.logger.error(f"  ❌ Size mismatch in copied file!")
+                                    else:
+                                        self.logger.info(f"  ✅ 7z.so copy verified successfully")
+                                else:
+                                    self.logger.error(f"  ❌ Copy operation failed - file not found after copy")
+                                    
                             except Exception as copy_e:
-                                self.logger.warning(f"Failed to copy 7z.so: {copy_e}")
+                                self.logger.warning(f"  ⚠️  Copy failed: {copy_e}")
+                                self.logger.info(f"  🔗 Trying symlink instead...")
+                                
                                 # Try creating symlink instead
                                 try:
                                     z7_so_target.symlink_to(z7_so_source)
-                                    self.logger.info(f"Created 7z.so symlink: {z7_so_target} -> {z7_so_source}")
+                                    if z7_so_target.exists() and z7_so_target.is_symlink():
+                                        link_target = z7_so_target.readlink()
+                                        self.logger.info(f"  ✅ Symlink created: {z7_so_target} -> {link_target}")
+                                    else:
+                                        self.logger.error(f"  ❌ Symlink creation failed - file not found after link")
                                 except Exception as link_e:
-                                    self.logger.error(f"Failed to create 7z.so symlink: {link_e}")
+                                    self.logger.error(f"  ❌ Symlink creation failed: {link_e}")
                         
-                        elif z7_so_target.exists():
-                            self.logger.info(f"7z.so already exists in working directory: {z7_so_target}")
-                        elif not z7_so_source.exists():
-                            self.logger.error(f"7z.so source not found: {z7_so_source}")
+                        # Final verification
+                        self.logger.info(f"  🔍 Final 7z.so verification:")
+                        if z7_so_target.exists():
+                            final_size = z7_so_target.stat().st_size
+                            is_symlink = z7_so_target.is_symlink()
+                            self.logger.info(f"    ✅ 7z.so available: {final_size} bytes, symlink: {is_symlink}")
+                            
+                            # Test if it's readable
+                            try:
+                                with open(z7_so_target, 'rb') as f:
+                                    first_bytes = f.read(8)
+                                self.logger.info(f"    ✅ 7z.so is readable, starts with: {first_bytes.hex()}")
+                            except Exception as read_e:
+                                self.logger.error(f"    ❌ 7z.so read test failed: {read_e}")
+                        else:
+                            self.logger.error(f"    ❌ 7z.so NOT available in working directory")
+                            
+                        # List all files in working directory for debugging
+                        try:
+                            cwd_files = list(Path.cwd().iterdir())
+                            so_files = [f for f in cwd_files if f.suffix == '.so']
+                            self.logger.info(f"  📁 .so files in working directory: {[f.name for f in so_files]}")
+                        except Exception as e:
+                            self.logger.warning(f"  ⚠️  Could not list working directory: {e}")
+                    else:
+                        self.logger.info("  ⏭️  7z.so setup not needed (not macOS App Bundle)")
                             
                 except Exception as e:
                     raise RuntimeError(f"Failed to change to KCC directory: {e}")
