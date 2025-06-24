@@ -279,6 +279,34 @@ class EPUBConverter:
                 try:
                     os.chdir(str(kcc_working_dir))
                     self.logger.info(f"Changed to KCC working directory: {kcc_working_dir}")
+                    
+                    # For macOS App Bundle, ensure 7z.so is accessible from current directory
+                    if (getattr(sys, 'frozen', False) and 
+                        not hasattr(sys, '_MEIPASS') and  # App Bundle, not PyInstaller
+                        platform.system() == "Darwin"):
+                        
+                        z7_so_source = resource_manager.base_path / "7z.so"
+                        z7_so_target = Path.cwd() / "7z.so"
+                        
+                        if z7_so_source.exists() and not z7_so_target.exists():
+                            try:
+                                import shutil
+                                shutil.copy2(str(z7_so_source), str(z7_so_target))
+                                self.logger.info(f"Copied 7z.so to working directory: {z7_so_target}")
+                            except Exception as copy_e:
+                                self.logger.warning(f"Failed to copy 7z.so: {copy_e}")
+                                # Try creating symlink instead
+                                try:
+                                    z7_so_target.symlink_to(z7_so_source)
+                                    self.logger.info(f"Created 7z.so symlink: {z7_so_target} -> {z7_so_source}")
+                                except Exception as link_e:
+                                    self.logger.error(f"Failed to create 7z.so symlink: {link_e}")
+                        
+                        elif z7_so_target.exists():
+                            self.logger.info(f"7z.so already exists in working directory: {z7_so_target}")
+                        elif not z7_so_source.exists():
+                            self.logger.error(f"7z.so source not found: {z7_so_source}")
+                            
                 except Exception as e:
                     raise RuntimeError(f"Failed to change to KCC directory: {e}")
 
