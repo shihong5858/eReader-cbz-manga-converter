@@ -52,15 +52,27 @@ if getattr(sys, 'frozen', False):
         logger.info(f"PyInstaller environment detected: {sys._MEIPASS}")
         kcc_dir = os.path.join(sys._MEIPASS, 'kindlecomicconverter')
         # Add 7z to PATH for KCC support in packaged environment
-        z7_path = os.path.join(sys._MEIPASS, '7z')
-        logger.info(f"Looking for 7z at: {z7_path}")
-        if os.path.exists(z7_path):
-            old_path = os.environ.get('PATH', '')
-            os.environ['PATH'] = os.path.dirname(z7_path) + os.pathsep + old_path
-            logger.info(f"Added 7z to PATH: {z7_path}")
-            logger.info(f"Updated PATH: {os.environ['PATH'][:200]}...")
-        else:
-            logger.warning(f"7z not found in packaged environment: {z7_path}")
+        # Try different possible locations for 7z in the packaged app
+        z7_candidates = [
+            os.path.join(sys._MEIPASS, '7z'),
+            os.path.join(sys._MEIPASS, '7z.exe'),  # Windows
+            os.path.join(sys._MEIPASS, 'bin', '7z'),
+        ]
+        
+        z7_found = False
+        for z7_path in z7_candidates:
+            logger.info(f"Looking for 7z at: {z7_path}")
+            if os.path.exists(z7_path):
+                old_path = os.environ.get('PATH', '')
+                z7_dir = os.path.dirname(z7_path)
+                os.environ['PATH'] = z7_dir + os.pathsep + old_path
+                logger.info(f"Added 7z to PATH: {z7_path}")
+                logger.info(f"Updated PATH: {os.environ['PATH'][:200]}...")
+                z7_found = True
+                break
+        
+        if not z7_found:
+            logger.warning(f"7z not found in packaged environment, tried: {z7_candidates}")
     else:
         logger.info("App Bundle environment detected")
         app_dir = os.path.dirname(sys.executable)
@@ -69,15 +81,27 @@ if getattr(sys, 'frozen', False):
         logger.info(f"Resources dir: {resources_dir}")
         kcc_dir = os.path.join(resources_dir, 'kindlecomicconverter')
         # Add 7z to PATH for KCC support in App Bundle
-        z7_path = os.path.join(resources_dir, '7z')
-        logger.info(f"Looking for 7z at: {z7_path}")
-        if os.path.exists(z7_path):
-            old_path = os.environ.get('PATH', '')
-            os.environ['PATH'] = os.path.dirname(z7_path) + os.pathsep + old_path
-            logger.info(f"Added 7z to PATH: {z7_path}")
-            logger.info(f"Updated PATH: {os.environ['PATH'][:200]}...")
-        else:
-            logger.warning(f"7z not found in App Bundle: {z7_path}")
+        # Try different possible locations for 7z in the App Bundle
+        z7_candidates = [
+            os.path.join(resources_dir, '7z'),
+            os.path.join(resources_dir, 'bin', '7z'),
+            os.path.join(app_dir, '7z'),  # Sometimes in the same dir as executable
+        ]
+        
+        z7_found = False
+        for z7_path in z7_candidates:
+            logger.info(f"Looking for 7z at: {z7_path}")
+            if os.path.exists(z7_path):
+                old_path = os.environ.get('PATH', '')
+                z7_dir = os.path.dirname(z7_path)
+                os.environ['PATH'] = z7_dir + os.pathsep + old_path
+                logger.info(f"Added 7z to PATH: {z7_path}")
+                logger.info(f"Updated PATH: {os.environ['PATH'][:200]}...")
+                z7_found = True
+                break
+        
+        if not z7_found:
+            logger.warning(f"7z not found in App Bundle, tried: {z7_candidates}")
 else:
     logger.info("Running in development environment")
     # Development environment

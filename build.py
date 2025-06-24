@@ -259,21 +259,56 @@ def get_data_files(target_platform: str) -> List[str]:
         if result.returncode == 0:
             z7_path = result.stdout.strip()
             print(f"[INFO] Found 7z using which: {z7_path}")
+            
+            # Resolve symlinks to get the actual binary
+            if os.path.islink(z7_path):
+                real_path = os.path.realpath(z7_path)
+                print(f"[INFO] 7z is a symlink, resolving to: {real_path}")
+                if os.path.exists(real_path):
+                    z7_path = real_path
+                else:
+                    print(f"[WARNING] Symlink target doesn't exist: {real_path}")
+                    z7_path = None
     except Exception as e:
         print(f"[WARNING] which command failed: {e}")
     
     # If which didn't work, try common locations
     if not z7_path or not os.path.exists(z7_path):
-        z7_locations = ["/opt/homebrew/bin/7z", "/usr/local/bin/7z", "/usr/bin/7z"]
+        z7_locations = [
+            "/opt/homebrew/bin/7z", 
+            "/usr/local/bin/7z", 
+            "/usr/bin/7z",
+            # Try direct path to p7zip binary on macOS
+            "/opt/homebrew/Cellar/p7zip/17.05/bin/7z",
+        ]
         for location in z7_locations:
             if os.path.exists(location):
-                z7_path = location
-                print(f"[INFO] Found 7z at common location: {z7_path}")
+                # Resolve symlinks if needed
+                if os.path.islink(location):
+                    real_location = os.path.realpath(location)
+                    if os.path.exists(real_location):
+                        z7_path = real_location
+                        print(f"[INFO] Found and resolved 7z symlink: {location} -> {real_location}")
+                    else:
+                        print(f"[WARNING] Symlink target doesn't exist: {real_location}")
+                        continue
+                else:
+                    z7_path = location
+                    print(f"[INFO] Found 7z at common location: {z7_path}")
                 break
     
     if z7_path and os.path.exists(z7_path):
-        data_files.append(f"{z7_path}{separator}.")
+        # For macOS, add to Resources directory instead of root
+        if target_platform == "darwin":
+            data_files.append(f"{z7_path}{separator}.")
+        else:
+            data_files.append(f"{z7_path}{separator}.")
         print(f"[INFO] Adding 7z binary: {z7_path}")
+        
+        # Also add the directory if it contains dependencies
+        z7_dir = os.path.dirname(z7_path)
+        if z7_dir != "/usr/bin" and z7_dir != "/bin":  # Don't package system directories
+            print(f"[INFO] Also checking 7z directory for dependencies: {z7_dir}")
     else:
         print("[WARNING] 7z binary not found, KCC may fail")
         print("[WARNING] Checked locations and 'which 7z' command")

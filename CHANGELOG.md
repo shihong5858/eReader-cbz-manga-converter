@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.2.4] - 2025-06-24
+
+### Fixed
+- GitHub Actions 7z detection using dynamic 'which' command lookup
+- macOS Intel/ARM build file name collisions in releases
+- Comprehensive 7z verification steps in all build environments
+- Ensure both macOS Intel and ARM versions are available in releases
+- Resolved 7z symlink packaging issues in PyInstaller builds
+- Improved 7z binary detection and packaging in macOS and Linux builds
+- Enhanced runtime 7z path resolution for packaged applications
+
 ## [1.2.3] - 2025-06-24
 
 ### Added
