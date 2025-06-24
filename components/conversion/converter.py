@@ -281,6 +281,35 @@ class EPUBConverter:
                 except Exception as e:
                     raise RuntimeError(f"Failed to change to KCC directory: {e}")
 
+                # Verify 7z availability before KCC execution
+                import subprocess
+                try:
+                    # Test if 7z is available
+                    result = subprocess.run(['7z'], capture_output=True, timeout=5)
+                    self.logger.info("7z tool is available for KCC")
+                except FileNotFoundError:
+                    # 7z not found in PATH, try to locate it
+                    z7_path = resource_manager.get_binary_path('7z')
+                    if z7_path and z7_path.exists():
+                        # Add the directory containing 7z to PATH
+                        z7_dir = str(z7_path.parent)
+                        current_path = os.environ.get('PATH', '')
+                        os.environ['PATH'] = f"{z7_dir}:{current_path}"
+                        self.logger.info(f"Added 7z directory to PATH: {z7_dir}")
+                        
+                        # Test again
+                        try:
+                            result = subprocess.run(['7z'], capture_output=True, timeout=5)
+                            self.logger.info("7z tool is now available after PATH update")
+                        except FileNotFoundError:
+                            self.logger.warning("7z still not found after PATH update")
+                    else:
+                        self.logger.warning(f"7z binary not found in bundle: {resource_manager.base_path}")
+                except subprocess.TimeoutExpired:
+                    self.logger.info("7z tool is available (timeout during help display is normal)")
+                except Exception as e:
+                    self.logger.warning(f"Error testing 7z availability: {e}")
+
                 # Run KCC conversion
                 kcc_args = [
                     '-p', 'KoC',

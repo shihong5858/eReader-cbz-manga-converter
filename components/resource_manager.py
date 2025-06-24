@@ -120,8 +120,18 @@ class ResourceManager:
     
     def get_binary_path(self, binary_name: str) -> Optional[Path]:
         """Get path to a bundled binary."""
+        # Check base path first (Frameworks for macOS, root for others)
         binary_path = self._base_path / binary_name
-        return binary_path if binary_path.exists() else None
+        if binary_path.exists():
+            return binary_path
+        
+        # For macOS App Bundle, also check Resources directory
+        if getattr(sys, 'frozen', False) and not hasattr(sys, '_MEIPASS'):
+            resources_binary_path = self._resources_path / binary_name
+            if resources_binary_path.exists():
+                return resources_binary_path
+        
+        return None
     
     def get_config_file(self, filename: str) -> Optional[Path]:
         """Get path to a configuration file."""
@@ -177,10 +187,23 @@ class ResourceManager:
         original_path = os.environ.get('PATH', '')
         
         if getattr(sys, 'frozen', False):
+            paths_to_add = []
+            
             # Add base path to PATH for binary access
-            binary_dir = str(self._base_path)
-            new_path = f"{binary_dir}:{original_path}"
+            paths_to_add.append(str(self._base_path))
+            
+            # For macOS App Bundle, also add Resources directory
+            if not hasattr(sys, '_MEIPASS'):  # macOS App Bundle
+                paths_to_add.append(str(self._resources_path))
+            
+            # Create new PATH with all directories
+            new_path = ':'.join(paths_to_add) + ':' + original_path
             os.environ['PATH'] = new_path
+            
+            from .logger_config import is_debug_enabled
+            if is_debug_enabled():
+                self.logger.debug(f"Updated PATH with binary directories: {paths_to_add}")
+                
             return original_path
         
         return None

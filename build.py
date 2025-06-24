@@ -298,16 +298,12 @@ def get_data_files(target_platform: str) -> List[str]:
                 break
     
     if z7_path and os.path.exists(z7_path):
-        # For macOS, add to Resources directory instead of root
-        if target_platform == "darwin":
-            data_files.append(f"{z7_path}{separator}.")
-        else:
-            data_files.append(f"{z7_path}{separator}.")
+        data_files.append(f"{z7_path}{separator}.")
         print(f"[INFO] Adding 7z binary: {z7_path}")
         
-        # Also add the directory if it contains dependencies
+        # Also add the directory if it contains dependencies (but not system directories)
         z7_dir = os.path.dirname(z7_path)
-        if z7_dir != "/usr/bin" and z7_dir != "/bin":  # Don't package system directories
+        if z7_dir not in ["/usr/bin", "/bin", "/usr/local/bin"]:  # Don't package system directories
             print(f"[INFO] Also checking 7z directory for dependencies: {z7_dir}")
     else:
         print("[WARNING] 7z binary not found, KCC may fail")
