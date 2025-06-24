@@ -101,6 +101,15 @@ jobs:
           appdmg --version || (echo "ERROR: appdmg not working" && exit 1)
           echo "✅ appdmg is ready"
 
+      - name: Verify 7z installation (All platforms)
+        run: |
+          echo "Checking 7z installation..."
+          which 7z || (echo "ERROR: 7z not found in PATH" && exit 1)
+          7z || echo "7z help displayed (this is normal)"
+          echo "✅ 7z is ready"
+          echo "PATH: $PATH"
+        shell: bash
+
       - name: Setup KCC environment
         run: |
           python build.py kcc

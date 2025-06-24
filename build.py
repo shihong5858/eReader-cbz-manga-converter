@@ -252,14 +252,31 @@ def get_data_files(target_platform: str) -> List[str]:
     ]
 
     # Add 7z binary for KCC support
-    z7_locations = ["/opt/homebrew/bin/7z", "/usr/local/bin/7z", "/usr/bin/7z"]
-    for z7_path in z7_locations:
-        if os.path.exists(z7_path):
-            data_files.append(f"{z7_path}{separator}.")
-            print(f"[INFO] Adding 7z binary: {z7_path}")
-            break
+    # Try to find 7z using which command first, then fallback to common locations
+    z7_path = None
+    try:
+        result = subprocess.run(["which", "7z"], capture_output=True, text=True)
+        if result.returncode == 0:
+            z7_path = result.stdout.strip()
+            print(f"[INFO] Found 7z using which: {z7_path}")
+    except Exception as e:
+        print(f"[WARNING] which command failed: {e}")
+    
+    # If which didn't work, try common locations
+    if not z7_path or not os.path.exists(z7_path):
+        z7_locations = ["/opt/homebrew/bin/7z", "/usr/local/bin/7z", "/usr/bin/7z"]
+        for location in z7_locations:
+            if os.path.exists(location):
+                z7_path = location
+                print(f"[INFO] Found 7z at common location: {z7_path}")
+                break
+    
+    if z7_path and os.path.exists(z7_path):
+        data_files.append(f"{z7_path}{separator}.")
+        print(f"[INFO] Adding 7z binary: {z7_path}")
     else:
         print("[WARNING] 7z binary not found, KCC may fail")
+        print("[WARNING] Checked locations and 'which 7z' command")
 
     return data_files
 
