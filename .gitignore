@@ -32,3 +32,4 @@ kcc/build/
 kcc/dist/
 kcc/.pyinstaller/
 kcc/*.spec
+*.egg-info/

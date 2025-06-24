@@ -355,24 +355,16 @@ def build_package(target_platform: Optional[str] = None):
 
         # macOS specific post-build cleanup
         if target_platform == "darwin":
-            # Find the generated .app bundle (without version in name)
-            original_app_name = "eReader CBZ Manga Converter.app"
-            original_app_path = DIST_DIR / original_app_name
+            # Ensure only .app bundle exists in dist/
+            app_name = "eReader CBZ Manga Converter.app"
+            app_path = DIST_DIR / app_name
             
-            # Target name with version for file system
-            versioned_app_name = f"eReader CBZ Manga Converter {VERSION}.app"
-            versioned_app_path = DIST_DIR / versioned_app_name
-            
-            if original_app_path.exists():
-                print(f"  [INFO] Found .app bundle: {original_app_name}")
-                
-                # Rename to include version in filename
-                original_app_path.rename(versioned_app_path)
-                print(f"  [INFO] Renamed to: {versioned_app_name}")
+            if app_path.exists():
+                print(f"  [INFO] Found .app bundle: {app_name}")
                 
                 # Remove any other files/folders that might have been created
                 for item in DIST_DIR.iterdir():
-                    if item.name != versioned_app_name and item.name != ".DS_Store":
+                    if item.name != app_name and item.name != ".DS_Store":
                         if item.is_dir():
                             shutil.rmtree(item)
                             print(f"  [INFO] Removed extra directory: {item.name}")
@@ -388,7 +380,7 @@ def build_package(target_platform: Optional[str] = None):
                         "--force", 
                         "--deep", 
                         "--sign", "-",  # Ad-hoc signature
-                        str(versioned_app_path)
+                        str(app_path)
                     ], check=True, capture_output=True)
                     print(f"  [INFO] App signed successfully")
                 except subprocess.CalledProcessError as e:
@@ -396,7 +388,7 @@ def build_package(target_platform: Optional[str] = None):
                     print(f"  [WARNING] App may be subject to App Translocation")
                     
             else:
-                print(f"  [WARNING] Expected .app bundle not found: {original_app_name}")
+                print(f"  [WARNING] Expected .app bundle not found: {app_name}")
 
         # Move spec file to our organized location
         spec_files = list(Path(".").glob("*.spec"))
@@ -424,7 +416,7 @@ def create_macos_dmg():
     """Create ZIP installer for macOS (more reliable than DMG)."""
     print_step("Creating macOS ZIP installer...")
     
-    app_name = f"eReader CBZ Manga Converter {VERSION}"
+    app_name = "eReader CBZ Manga Converter"
     app_path = DIST_DIR / f"{app_name}.app"
     
     if not app_path.exists():
@@ -438,30 +430,14 @@ def create_macos_dmg():
         
         if installer_config.exists():
             try:
-                # Read and update installer config with current app name
-                import json
-                with open(installer_config, 'r') as f:
-                    config = json.load(f)
-                
-                # Update the app path with correct version
-                for item in config.get("contents", []):
-                    if item.get("type") == "file" and "eReader CBZ Manga Converter" in item.get("path", ""):
-                        item["path"] = f"../dist/eReader CBZ Manga Converter {VERSION}.app"
-                
-                # Write temporary config file
-                temp_config = Path("build/temp_installer.json")
-                temp_config.parent.mkdir(exist_ok=True)
-                with open(temp_config, 'w') as f:
-                    json.dump(config, f, indent=2)
-                
                 dmg_name = f"eReader_CBZ_Manga_Converter_macOS_arm_{VERSION}.dmg"
                 dmg_path = DIST_DIR / dmg_name
                 
                 print(f"[INFO] Running appdmg from {Path.cwd()}")
-                print(f"[INFO] Config: {temp_config.absolute()}")
+                print(f"[INFO] Config: {installer_config.absolute()}")
                 print(f"[INFO] Output: {dmg_path.absolute()}")
                 
-                dmg_cmd = ["appdmg", str(temp_config.absolute()), str(dmg_path.absolute())]
+                dmg_cmd = ["appdmg", str(installer_config.absolute()), str(dmg_path.absolute())]
                 result = subprocess.run(dmg_cmd, check=True, capture_output=True, text=True, cwd=Path.cwd())
                 
                 print_success(f"Created DMG: {dmg_name}")
@@ -471,9 +447,6 @@ def create_macos_dmg():
                 # Show appdmg output for debugging
                 if result.stdout:
                     print(f"[INFO] appdmg output: {result.stdout}")
-                
-                # Clean up temporary config
-                temp_config.unlink()
                     
                 return
                 

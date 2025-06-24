@@ -6,6 +6,7 @@ Provides standardized access to bundled resources across different environments.
 
 import os
 import sys
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,9 @@ class ResourceManager:
     """Manages resource paths for both development and packaged environments."""
     
     def __init__(self):
+        # Setup logger
+        self.logger = logging.getLogger(__name__)
+        
         self._base_path: Optional[Path] = None
         self._kcc_path: Optional[Path] = None
         self._resources_path: Optional[Path] = None
@@ -21,22 +25,50 @@ class ResourceManager:
     
     def _initialize_paths(self):
         """Initialize all resource paths based on current environment."""
+        # Import here to avoid circular imports
+        from .logger_config import is_debug_enabled
+        
+        # Only log detailed info in debug mode
+        if is_debug_enabled():
+            self.logger.debug("="*60)
+            self.logger.debug("ResourceManager: Initializing paths...")
+            self.logger.debug(f"sys.frozen: {getattr(sys, 'frozen', False)}")
+            self.logger.debug(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'Not set')}")
+            self.logger.debug(f"sys.executable: {sys.executable}")
+        
         if getattr(sys, 'frozen', False):
             # Packaged environment (PyInstaller)
+            if is_debug_enabled():
+                self.logger.debug("Detected packaged environment (PyInstaller)")
+            
             if hasattr(sys, '_MEIPASS'):
                 # Single-file bundle
                 self._base_path = Path(sys._MEIPASS)
                 self._resources_path = self._base_path
                 self._kcc_path = self._base_path / 'kindlecomicconverter'
+                
+                if is_debug_enabled():
+                    self.logger.debug("Using single-file bundle configuration")
+                    self.logger.debug(f"Single-file base_path: {self._base_path}")
+                    self.logger.debug(f"Single-file resources_path: {self._resources_path}")
+                    self.logger.debug(f"Single-file kcc_path: {self._kcc_path}")
             else:
                 # Directory bundle (macOS .app)
                 executable_dir = Path(sys.executable).parent
-                # Base path is Frameworks directory for resources
-                self._base_path = executable_dir.parent / 'Frameworks'
-                # Resources path is Resources directory for config files
+                
+                # Resources path is Resources directory for data files
                 self._resources_path = executable_dir.parent / 'Resources'
-                # KCC path is in Frameworks directory
-                self._kcc_path = self._base_path / 'kindlecomicconverter'
+                # Base path is Frameworks directory for binaries
+                self._base_path = executable_dir.parent / 'Frameworks'
+                # KCC path is in Resources directory (where PyInstaller puts data files)
+                self._kcc_path = self._resources_path / 'kindlecomicconverter'
+                
+                if is_debug_enabled():
+                    self.logger.debug("Using directory bundle configuration (macOS .app)")
+                    self.logger.debug(f"Executable directory: {executable_dir}")
+                    self.logger.debug(f"macOS bundle base_path (Frameworks): {self._base_path}")
+                    self.logger.debug(f"macOS bundle resources_path (Resources): {self._resources_path}")
+                    self.logger.debug(f"macOS bundle kcc_path: {self._kcc_path}")
         else:
             # Development environment
             current_file = Path(__file__).resolve()
@@ -45,6 +77,31 @@ class ResourceManager:
             self._base_path = project_root
             self._kcc_path = project_root / 'kcc'
             self._resources_path = project_root / 'config'
+            
+            if is_debug_enabled():
+                self.logger.debug("Detected development environment")
+                self.logger.debug(f"Development base_path: {self._base_path}")
+                self.logger.debug(f"Development kcc_path: {self._kcc_path}")
+                self.logger.debug(f"Development resources_path: {self._resources_path}")
+        
+        # Only verify essential paths, skip detailed logging in normal mode
+        if not self._kcc_path.exists():
+            self.logger.error(f"KCC directory not found: {self._kcc_path}")
+        elif is_debug_enabled():
+            # Only show detailed verification in debug mode
+            self.logger.debug("Path verification:")
+            self.logger.debug(f"base_path exists: {self._base_path.exists()} -> {self._base_path}")
+            self.logger.debug(f"kcc_path exists: {self._kcc_path.exists()} -> {self._kcc_path}")
+            self.logger.debug(f"resources_path exists: {self._resources_path.exists()} -> {self._resources_path}")
+            
+            # Check for essential KCC files in debug mode only
+            essential_files = ['kindlecomicconverter', '__init__.py', 'comic2ebook.py']
+            for essential in essential_files:
+                essential_path = self._kcc_path / essential
+                self.logger.debug(f"Essential {essential}: {'EXISTS' if essential_path.exists() else 'MISSING'}")
+                
+        if is_debug_enabled():
+            self.logger.debug("="*60)
     
     @property
     def base_path(self) -> Path:
@@ -79,11 +136,40 @@ class ResourceManager:
     
     def add_kcc_to_path(self) -> bool:
         """Add KCC path to sys.path if it exists."""
+        from .logger_config import is_debug_enabled
+        
         if self._kcc_path.exists():
             kcc_str = str(self._kcc_path)
+            
             if kcc_str not in sys.path:
                 sys.path.insert(0, kcc_str)
-            return True  # Return True if path exists, regardless of whether it was already in sys.path
+                if is_debug_enabled():
+                    self.logger.debug(f"Added KCC to sys.path: {kcc_str}")
+            
+            # Test import after adding to path
+            try:
+                import kindlecomicconverter
+                if is_debug_enabled():
+                    self.logger.debug(f"KCC import successful! Version: {getattr(kindlecomicconverter, '__version__', 'unknown')}")
+                
+                # Test specific module
+                from kindlecomicconverter import comic2ebook
+                if is_debug_enabled():
+                    self.logger.debug("comic2ebook module import successful!")
+                
+            except ImportError as e:
+                self.logger.error(f"KCC import failed: {e}")
+                if is_debug_enabled():
+                    self.logger.debug(f"Current sys.path: {sys.path[:5]}...")
+                    init_file = self._kcc_path / 'kindlecomicconverter' / '__init__.py'
+                    self.logger.debug(f"kindlecomicconverter/__init__.py exists: {init_file.exists()}")
+                
+            except Exception as e:
+                self.logger.error(f"Unexpected error testing KCC import: {e}")
+            
+            return True
+        else:
+            self.logger.error(f"KCC path does not exist: {self._kcc_path}")
         return False
     
     def setup_binary_environment(self) -> Optional[str]:
