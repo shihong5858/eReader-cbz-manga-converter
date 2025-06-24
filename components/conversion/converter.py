@@ -309,6 +309,21 @@ class EPUBConverter:
                         st = loc.stat()
                         executable = bool(st.st_mode & stat.S_IXUSR)
                         self.logger.info(f"  Size: {st.st_size} bytes, Executable: {executable}")
+                        
+                        # Check if it's a symbolic link or regular file
+                        if loc.is_symlink():
+                            target = loc.readlink()
+                            self.logger.info(f"  Symlink target: {target}")
+                            # Check if target exists
+                            if loc.resolve().exists():
+                                resolved_st = loc.resolve().stat()
+                                self.logger.info(f"  Resolved size: {resolved_st.st_size} bytes")
+                            else:
+                                self.logger.error(f"  Symlink target does not exist!")
+                        
+                        # Check if file size is reasonable for 7z binary
+                        if st.st_size < 1024:  # Less than 1KB is suspicious
+                            self.logger.error(f"  ⚠️ 7z file too small, likely corrupted or invalid")
                 
                 try:
                     # Test if 7z is available

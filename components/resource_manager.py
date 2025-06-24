@@ -41,34 +41,67 @@ class ResourceManager:
             if is_debug_enabled():
                 self.logger.debug("Detected packaged environment (PyInstaller)")
             
-            if hasattr(sys, '_MEIPASS'):
-                # Single-file bundle
+            # Check if this is a macOS App Bundle by looking at the executable path
+            executable_path = Path(sys.executable)
+            is_macos_app_bundle = (
+                '.app' in str(executable_path) and 
+                'Contents/MacOS' in str(executable_path)
+            )
+            
+            if is_debug_enabled():
+                self.logger.debug(f"Executable path: {executable_path}")
+                self.logger.debug(f"Has _MEIPASS: {hasattr(sys, '_MEIPASS')}")
+                self.logger.debug(f"Is macOS App Bundle: {is_macos_app_bundle}")
+            
+            if is_macos_app_bundle:
+                # macOS App Bundle - use proper directory structure
+                executable_dir = executable_path.parent  # MacOS
+                app_contents = executable_dir.parent     # Contents
+                
+                # For macOS App Bundle, put everything in Resources
+                self._resources_path = app_contents / 'Resources'
+                self._base_path = self._resources_path  # Use Resources for binaries too
+                self._kcc_path = self._resources_path / 'kindlecomicconverter'
+                
+                if is_debug_enabled():
+                    self.logger.debug("Using macOS App Bundle configuration")
+                    self.logger.debug(f"Executable directory: {executable_dir}")
+                    self.logger.debug(f"App Contents: {app_contents}")
+                    self.logger.debug(f"macOS bundle base_path (Resources): {self._base_path}")
+                    self.logger.debug(f"macOS bundle resources_path (Resources): {self._resources_path}")
+                    self.logger.debug(f"macOS bundle kcc_path: {self._kcc_path}")
+            elif hasattr(sys, '_MEIPASS'):
+                # PyInstaller single-file bundle
                 self._base_path = Path(sys._MEIPASS)
                 self._resources_path = self._base_path
                 self._kcc_path = self._base_path / 'kindlecomicconverter'
                 
                 if is_debug_enabled():
-                    self.logger.debug("Using single-file bundle configuration")
+                    self.logger.debug("Using PyInstaller single-file bundle configuration")
                     self.logger.debug(f"Single-file base_path: {self._base_path}")
                     self.logger.debug(f"Single-file resources_path: {self._resources_path}")
                     self.logger.debug(f"Single-file kcc_path: {self._kcc_path}")
             else:
-                # Directory bundle (macOS .app)
+                # Other directory bundle
                 executable_dir = Path(sys.executable).parent
                 
-                # Resources path is Resources directory for data files
-                self._resources_path = executable_dir.parent / 'Resources'
-                # Base path is Frameworks directory for binaries
-                self._base_path = executable_dir.parent / 'Frameworks'
-                # KCC path is in Resources directory (where PyInstaller puts data files)
-                self._kcc_path = self._resources_path / 'kindlecomicconverter'
+                # Try to detect if we're in a special directory structure
+                if (executable_dir.parent / 'Resources').exists():
+                    # Looks like an app bundle without proper detection
+                    self._resources_path = executable_dir.parent / 'Resources'
+                    self._base_path = self._resources_path
+                    self._kcc_path = self._resources_path / 'kindlecomicconverter'
+                else:
+                    # Standard directory bundle
+                    self._base_path = executable_dir
+                    self._resources_path = executable_dir
+                    self._kcc_path = executable_dir / 'kindlecomicconverter'
                 
                 if is_debug_enabled():
-                    self.logger.debug("Using directory bundle configuration (macOS .app)")
-                    self.logger.debug(f"Executable directory: {executable_dir}")
-                    self.logger.debug(f"macOS bundle base_path (Frameworks): {self._base_path}")
-                    self.logger.debug(f"macOS bundle resources_path (Resources): {self._resources_path}")
-                    self.logger.debug(f"macOS bundle kcc_path: {self._kcc_path}")
+                    self.logger.debug("Using other directory bundle configuration")
+                    self.logger.debug(f"base_path: {self._base_path}")
+                    self.logger.debug(f"resources_path: {self._resources_path}")
+                    self.logger.debug(f"kcc_path: {self._kcc_path}")
         else:
             # Development environment
             current_file = Path(__file__).resolve()
@@ -120,16 +153,41 @@ class ResourceManager:
     
     def get_binary_path(self, binary_name: str) -> Optional[Path]:
         """Get path to a bundled binary."""
-        # Check base path first (Frameworks for macOS, root for others)
-        binary_path = self._base_path / binary_name
-        if binary_path.exists():
-            return binary_path
+        from .logger_config import is_debug_enabled
         
-        # For macOS App Bundle, also check Resources directory
-        if getattr(sys, 'frozen', False) and not hasattr(sys, '_MEIPASS'):
-            resources_binary_path = self._resources_path / binary_name
-            if resources_binary_path.exists():
-                return resources_binary_path
+        # Check multiple possible locations
+        candidate_paths = [
+            self._base_path / binary_name,
+            self._resources_path / binary_name,
+        ]
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_paths = []
+        for path in candidate_paths:
+            if str(path) not in seen:
+                seen.add(str(path))
+                unique_paths.append(path)
+        
+        for binary_path in unique_paths:
+            if binary_path.exists():
+                # Additional validation for binary files
+                try:
+                    stat_info = binary_path.stat()
+                    if is_debug_enabled():
+                        self.logger.debug(f"Found {binary_name} at {binary_path}: {stat_info.st_size} bytes")
+                    
+                    # Check if it's a reasonable size for a binary (more than 1KB)
+                    if stat_info.st_size < 1024:
+                        if is_debug_enabled():
+                            self.logger.debug(f"Binary {binary_name} too small ({stat_info.st_size} bytes), might be corrupted")
+                        continue
+                    
+                    return binary_path
+                except Exception as e:
+                    if is_debug_enabled():
+                        self.logger.debug(f"Error checking {binary_path}: {e}")
+                    continue
         
         return None
     
@@ -203,14 +261,14 @@ class ResourceManager:
             if is_debug_enabled():
                 self.logger.debug(f"  Added base_path: {self._base_path}")
             
-            # For macOS App Bundle, also add Resources directory
-            if not hasattr(sys, '_MEIPASS'):  # macOS App Bundle
+            # For different directory structures, add appropriate paths
+            if str(self._base_path) != str(self._resources_path):
                 paths_to_add.append(str(self._resources_path))
                 if is_debug_enabled():
-                    self.logger.debug(f"  Added Resources directory for macOS App Bundle: {self._resources_path}")
+                    self.logger.debug(f"  Added additional resources directory: {self._resources_path}")
             else:
                 if is_debug_enabled():
-                    self.logger.debug("  Skipping Resources directory (not macOS App Bundle)")
+                    self.logger.debug("  Base path and resources path are the same, no need to add twice")
             
             # Create new PATH with all directories
             new_path = ':'.join(paths_to_add) + ':' + original_path
