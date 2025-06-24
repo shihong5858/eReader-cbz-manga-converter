@@ -9,6 +9,7 @@
 ### Fixed
 - Unified version management across all project files
 - Build artifacts now use consistent version numbering
+- KCC 7z command not found issue in GitHub compiled versions (macOS App Bundle PATH configuration)
 
 ## [1.2.2] - 2025-06-02
 
