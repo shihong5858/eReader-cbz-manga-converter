@@ -251,6 +251,7 @@ class ResourceManager:
     def setup_binary_environment(self) -> Optional[str]:
         """Setup environment for binary tools (like 7z)."""
         from .logger_config import is_debug_enabled
+        import platform
         
         original_path = os.environ.get('PATH', '')
         
@@ -279,11 +280,13 @@ class ResourceManager:
                     self.logger.debug("  Base path and resources path are the same, no need to add twice")
             
             # Create new PATH with all directories
-            new_path = ':'.join(paths_to_add) + ':' + original_path
+            # Use os.pathsep for cross-platform compatibility (';' on Windows, ':' on Unix)
+            new_path = os.pathsep.join(paths_to_add) + os.pathsep + original_path
             os.environ['PATH'] = new_path
             
             if is_debug_enabled():
                 self.logger.debug(f"🔧 Updated PATH with binary directories: {paths_to_add}")
+                self.logger.debug(f"  PATH separator: '{os.pathsep}'")
                 self.logger.debug(f"  Original PATH length: {len(original_path)} chars")
                 self.logger.debug(f"  New PATH length: {len(new_path)} chars")
                 

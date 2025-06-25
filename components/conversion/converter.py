@@ -9,10 +9,11 @@ import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
+import datetime
 
 # Import ResourceManager
 from ..resource_manager import get_resource_manager
-from ..logger_config import get_logger
+from ..logger_config import get_logger, is_debug_enabled
 
 # Initialize ResourceManager
 resource_manager = get_resource_manager()
@@ -42,7 +43,14 @@ class EPUBConverter:
             bool: True if conversion successful, False otherwise
         """
         temp_dir = None
+        conversion_log = []  # Store conversion logs for error reporting
+        
         try:
+            # Store conversion start info
+            conversion_log.append(f"Starting conversion: {os.path.basename(input_file)}")
+            conversion_log.append(f"Output directory: {output_directory}")
+            conversion_log.append(f"Platform: {platform.system()}")
+            
             self.logger.info(f"Starting conversion: {os.path.basename(input_file)}")
             
             if status_callback:
@@ -52,20 +60,28 @@ class EPUBConverter:
 
             # Validate input file
             if not os.path.exists(input_file):
-                raise FileNotFoundError(f"Input file not found: {input_file}")
+                error_msg = f"Input file not found: {input_file}"
+                conversion_log.append(f"ERROR: {error_msg}")
+                raise FileNotFoundError(error_msg)
             if not input_file.lower().endswith('.epub'):
-                raise ValueError(f"Invalid input file format: {input_file}")
+                error_msg = f"Invalid input file format: {input_file}"
+                conversion_log.append(f"ERROR: {error_msg}")
+                raise ValueError(error_msg)
 
             # Validate output directory
             if not os.path.exists(output_directory):
                 try:
                     os.makedirs(output_directory, exist_ok=True)
+                    conversion_log.append(f"Created output directory: {output_directory}")
                     self.logger.info(f"Created output directory: {output_directory}")
                 except Exception as e:
-                    raise PermissionError(f"Cannot create output directory: {e}")
+                    error_msg = f"Cannot create output directory: {e}"
+                    conversion_log.append(f"ERROR: {error_msg}")
+                    raise PermissionError(error_msg)
 
             # Create a temporary directory
             temp_dir = tempfile.mkdtemp()
+            conversion_log.append(f"Created temporary directory: {temp_dir}")
             self.logger.info(f"Created temporary directory: {temp_dir}")
 
             if status_callback:
@@ -77,11 +93,16 @@ class EPUBConverter:
             try:
                 with zipfile.ZipFile(input_file, 'r') as epub:
                     epub.extractall(temp_dir)
+                conversion_log.append("Successfully extracted EPUB contents")
                 self.logger.info("Successfully extracted EPUB contents")
             except zipfile.BadZipFile as e:
-                raise ValueError(f"Invalid EPUB file: {e}")
+                error_msg = f"Invalid EPUB file: {e}"
+                conversion_log.append(f"ERROR: {error_msg}")
+                raise ValueError(error_msg)
             except Exception as e:
-                raise RuntimeError(f"Failed to extract EPUB: {e}")
+                error_msg = f"Failed to extract EPUB: {e}"
+                conversion_log.append(f"ERROR: {error_msg}")
+                raise RuntimeError(error_msg)
 
             if status_callback:
                 status_callback("Extracting images")
@@ -92,8 +113,10 @@ class EPUBConverter:
             try:
                 ordered_html_files = self._process_epub_structure(temp_dir)
                 if not ordered_html_files:
+                    conversion_log.append("WARNING: No HTML files found in EPUB")
                     self.logger.warning("No HTML files found in EPUB")
             except Exception as e:
+                conversion_log.append(f"ERROR: Error processing EPUB structure: {e}")
                 self.logger.error(f"Error processing EPUB structure: {e}")
                 ordered_html_files = []
 
@@ -108,10 +131,15 @@ class EPUBConverter:
                 image_count = len([f for f in os.listdir(ordered_images_dir) 
                                  if f.endswith(('.jpg', '.jpeg', '.png'))])
                 if image_count == 0:
-                    raise ValueError("No images found in EPUB file")
+                    error_msg = "No images found in EPUB file"
+                    conversion_log.append(f"ERROR: {error_msg}")
+                    raise ValueError(error_msg)
+                conversion_log.append(f"Extracted {image_count} images")
                 self.logger.info(f"Extracted {image_count} images")
             except Exception as e:
-                raise RuntimeError(f"Failed to extract images: {e}")
+                error_msg = f"Failed to extract images: {e}"
+                conversion_log.append(f"ERROR: {error_msg}")
+                raise RuntimeError(error_msg)
 
             if status_callback:
                 status_callback("Creating ZIP file")
@@ -124,24 +152,87 @@ class EPUBConverter:
                 input_file,
                 output_directory,
                 progress_callback,
-                status_callback
+                status_callback,
+                conversion_log  # Pass conversion log to CBZ creation
             )
 
             if success:
+                conversion_log.append(f"Conversion completed successfully: {os.path.basename(input_file)}")
                 self.logger.info(f"Conversion completed successfully: {os.path.basename(input_file)}")
                 if status_callback:
                     status_callback("Completed")
                 if progress_callback:
                     progress_callback(100)
             else:
+                conversion_log.append(f"Conversion failed: {os.path.basename(input_file)}")
                 self.logger.error(f"Conversion failed: {os.path.basename(input_file)}")
 
             return success
 
         except Exception as e:
-            self.logger.error(f"Conversion failed for {os.path.basename(input_file)}: {str(e)}")
+            error_msg = f"Conversion failed for {os.path.basename(input_file)}: {str(e)}"
+            conversion_log.append(f"ERROR: {error_msg}")
+            self.logger.error(error_msg)
             if status_callback:
                 status_callback(f"Error: {str(e)}")
+            
+            # If conversion failed and we're not in debug mode, write a temporary log file
+            if not is_debug_enabled() and conversion_log:
+                try:
+                    # Write conversion log to desktop for debugging
+                    # Use more reliable method for Windows desktop path
+                    if platform.system() == "Windows":
+                        # Try Windows-specific environment variables first
+                        desktop_path = os.environ.get('USERPROFILE')
+                        if desktop_path:
+                            desktop_path = os.path.join(desktop_path, 'Desktop')
+                        else:
+                            # Fallback to expanduser
+                            desktop_path = os.path.expanduser("~/Desktop")
+                    else:
+                        desktop_path = os.path.expanduser("~/Desktop")
+                    
+                    # Ensure desktop directory exists
+                    if not os.path.exists(desktop_path):
+                        # Try to create it or use temp directory as fallback
+                        try:
+                            os.makedirs(desktop_path, exist_ok=True)
+                        except:
+                            desktop_path = tempfile.gettempdir()
+                            print(f"[WARNING] Using temp directory for error log: {desktop_path}")
+                    
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    error_log_path = os.path.join(desktop_path, f"eReader_CBZ_Error_{timestamp}.txt")
+                    
+                    with open(error_log_path, 'w', encoding='utf-8') as f:
+                        f.write("eReader CBZ Manga Converter - Conversion Error Log\n")
+                        f.write("=" * 60 + "\n")
+                        f.write(f"Time: {datetime.datetime.now()}\n")
+                        f.write(f"Platform: {platform.system()}\n")
+                        f.write(f"Python: {sys.version}\n")
+                        f.write(f"Input file: {input_file}\n")
+                        f.write(f"Output directory: {output_directory}\n")
+                        f.write("=" * 60 + "\n\n")
+                        f.write("Conversion Log:\n")
+                        for log_entry in conversion_log:
+                            f.write(f"{log_entry}\n")
+                        
+                        # Add PATH info for debugging
+                        f.write("\n" + "=" * 60 + "\n")
+                        f.write("Environment Information:\n")
+                        f.write(f"PATH: {os.environ.get('PATH', 'Not set')}\n")
+                        f.write(f"Current directory: {os.getcwd()}\n")
+                    
+                    # Update status to inform user about error log
+                    if status_callback:
+                        status_callback(f"Error log saved to: {error_log_path}")
+                        
+                    print(f"[ERROR LOG] Conversion error log written to: {error_log_path}")
+                except Exception as log_error:
+                    self.logger.error(f"Failed to write error log: {log_error}")
+                    if status_callback:
+                        status_callback(f"Failed to write error log: {log_error}")
+            
             return False
         finally:
             # Clean up temporary directory
@@ -220,17 +311,22 @@ class EPUBConverter:
 
         return ordered_html_files
 
-    def _create_cbz(self, ordered_images_dir, input_file, output_directory, progress_callback, status_callback):
+    def _create_cbz(self, ordered_images_dir, input_file, output_directory, progress_callback, status_callback, conversion_log=None):
         """Create CBZ file using KCC"""
         ordered_zip_path = None
+        if conversion_log is None:
+            conversion_log = []
+            
         try:
             self.logger.info("Starting CBZ creation process")
+            conversion_log.append("Starting CBZ creation process")
             
             # Create output filename
             output_file = os.path.join(
                 output_directory,
                 os.path.splitext(os.path.basename(input_file))[0] + '.cbz'
             )
+            conversion_log.append(f"Output file: {output_file}")
 
             # Create ZIP file with ordered images
             ordered_zip_path = os.path.join(os.path.dirname(ordered_images_dir), 'ordered_images.zip')
@@ -256,9 +352,12 @@ class EPUBConverter:
                             zip_progress = 40 + (10 * i / total_files)
                             progress_callback(int(zip_progress))
 
+                conversion_log.append(f"Created temporary ZIP with {len(image_files)} images")
                 self.logger.info(f"Created temporary ZIP with {len(image_files)} images")
             except Exception as e:
-                raise RuntimeError(f"Failed to create temporary ZIP: {e}")
+                error_msg = f"Failed to create temporary ZIP: {e}"
+                conversion_log.append(f"ERROR: {error_msg}")
+                raise RuntimeError(error_msg)
 
             if status_callback:
                 status_callback("Running KCC conversion...")
@@ -274,10 +373,13 @@ class EPUBConverter:
                 kcc_working_dir = resource_manager.get_working_directory()
                 
                 if not kcc_working_dir.exists():
-                    raise RuntimeError(f"KCC working directory not found: {kcc_working_dir}")
+                    error_msg = f"KCC working directory not found: {kcc_working_dir}"
+                    conversion_log.append(f"ERROR: {error_msg}")
+                    raise RuntimeError(error_msg)
                 
                 try:
                     os.chdir(str(kcc_working_dir))
+                    conversion_log.append(f"Changed to KCC working directory: {kcc_working_dir}")
                     self.logger.info(f"Changed to KCC working directory: {kcc_working_dir}")
                     
                     # For macOS App Bundle, ensure 7z.so is accessible from current directory
@@ -319,7 +421,9 @@ class EPUBConverter:
                             self.logger.error(f"7z.so source not found: {z7_so_source}")
                             
                 except Exception as e:
-                    raise RuntimeError(f"Failed to change to KCC directory: {e}")
+                    error_msg = f"Failed to change to KCC directory: {e}"
+                    conversion_log.append(f"ERROR: {error_msg}")
+                    raise RuntimeError(error_msg)
 
                 # Verify 7z availability before KCC execution
                 import subprocess
@@ -327,9 +431,12 @@ class EPUBConverter:
                 
                 try:
                     # Test if 7z is available
+                    conversion_log.append(f"Testing 7z availability with command: {z7_cmd}")
                     result = subprocess.run([z7_cmd], capture_output=True, timeout=5)
+                    conversion_log.append(f"7z tool is available for KCC")
                     self.logger.debug(f"7z tool is available for KCC")
                 except FileNotFoundError:
+                    conversion_log.append(f"WARNING: 7z not found in PATH, attempting to locate it")
                     self.logger.warning(f"7z not found in PATH, attempting to locate it")
                     # 7z not found in PATH, try to locate it
                     z7_path = resource_manager.get_binary_path('7z')
@@ -337,23 +444,32 @@ class EPUBConverter:
                         # Add the directory containing 7z to PATH
                         z7_dir = str(z7_path.parent)
                         current_path = os.environ.get('PATH', '')
-                        path_sep = ';' if platform.system() == "Windows" else ':'
-                        os.environ['PATH'] = f"{z7_dir}{path_sep}{current_path}"
+                        # Use os.pathsep for cross-platform compatibility
+                        os.environ['PATH'] = f"{z7_dir}{os.pathsep}{current_path}"
+                        conversion_log.append(f"Added 7z directory to PATH: {z7_dir}")
                         self.logger.info(f"Added 7z directory to PATH: {z7_dir}")
                         
                         # Test again with proper command
                         z7_test_cmd = z7_path.name if z7_path.name.endswith('.exe') else z7_cmd
                         try:
                             result = subprocess.run([z7_test_cmd], capture_output=True, timeout=5)
+                            conversion_log.append(f"7z tool is now available after PATH update")
                             self.logger.debug(f"7z tool is now available after PATH update")
                         except FileNotFoundError:
-                            self.logger.error(f"7z still not found after PATH update")
+                            error_msg = f"7z still not found after PATH update"
+                            conversion_log.append(f"ERROR: {error_msg}")
+                            self.logger.error(error_msg)
                     else:
-                        self.logger.error(f"7z binary not found in bundle")
+                        error_msg = f"7z binary not found in bundle"
+                        conversion_log.append(f"ERROR: {error_msg}")
+                        self.logger.error(error_msg)
                 except subprocess.TimeoutExpired:
+                    conversion_log.append(f"7z tool is available (timeout during help display is normal)")
                     self.logger.debug(f"7z tool is available (timeout during help display is normal)")
                 except Exception as e:
-                    self.logger.error(f"Error testing 7z availability: {e}")
+                    error_msg = f"Error testing 7z availability: {e}"
+                    conversion_log.append(f"ERROR: {error_msg}")
+                    self.logger.error(error_msg)
 
                 # Run KCC conversion
                 kcc_args = [
@@ -370,9 +486,13 @@ class EPUBConverter:
 
                 try:
                     from kindlecomicconverter.comic2ebook import main as kcc_main
+                    conversion_log.append("KCC module imported successfully")
                 except ImportError as e:
-                    raise RuntimeError(f"KCC module not found: {e}")
+                    error_msg = f"KCC module not found: {e}"
+                    conversion_log.append(f"ERROR: {error_msg}")
+                    raise RuntimeError(error_msg)
 
+                conversion_log.append("Starting KCC conversion...")
                 self.logger.info("Starting KCC conversion...")
                 import time
                 start_time = time.time()
@@ -393,21 +513,29 @@ class EPUBConverter:
                     try:
                         kcc_result = kcc_main(kcc_args)
                         success = kcc_result == 0
+                        conversion_log.append(f"KCC main returned: {kcc_result}")
                         self.logger.debug(f"KCC main returned: {kcc_result}")
                     except SystemExit as e:
                         success = e.code == 0
+                        conversion_log.append(f"KCC exited with code: {e.code}")
                         self.logger.debug(f"KCC exited with code: {e.code}")
                     except Exception as e:
-                        self.logger.error(f"KCC execution error: {e}")
+                        error_msg = f"KCC execution error: {e}"
+                        conversion_log.append(f"ERROR: {error_msg}")
+                        self.logger.error(error_msg)
                         success = False
                         
                         # Log subprocess errors for debugging
                         if hasattr(e, 'cmd') and hasattr(e, 'returncode'):
+                            conversion_log.append(f"Command that failed: {e.cmd}")
+                            conversion_log.append(f"Return code: {e.returncode}")
                             self.logger.error(f"Command that failed: {e.cmd}")
                             self.logger.error(f"Return code: {e.returncode}")
                             if hasattr(e, 'stderr') and e.stderr:
+                                conversion_log.append(f"Process stderr: {e.stderr}")
                                 self.logger.error(f"Process stderr: {e.stderr}")
                             if hasattr(e, 'stdout') and e.stdout:
+                                conversion_log.append(f"Process stdout: {e.stdout}")
                                 self.logger.error(f"Process stdout: {e.stdout}")
                 
                 finally:
@@ -416,23 +544,28 @@ class EPUBConverter:
                     sys.stderr = old_stderr
                     
                     execution_time = time.time() - start_time
+                    conversion_log.append(f"KCC completed in {execution_time:.2f}s")
                     self.logger.info(f"KCC completed in {execution_time:.2f}s")
                     
-                                                        # Log captured output for debugging
+                    # Log captured output for debugging
                     stdout_content = captured_stdout.getvalue()
                     stderr_content = captured_stderr.getvalue()
                     
                     if stdout_content:
                         self.logger.debug("KCC stdout:")
+                        conversion_log.append("KCC stdout:")
                         for line in stdout_content.strip().split('\n')[:10]:  # Limit to first 10 lines
                             if line.strip():
                                 self.logger.debug(f"  {line}")
+                                conversion_log.append(f"  {line}")
                     
                     if stderr_content and not success:
                         self.logger.error("KCC stderr:")
+                        conversion_log.append("KCC stderr:")
                         for line in stderr_content.strip().split('\n')[:10]:  # Limit to first 10 lines
                             if line.strip():
                                 self.logger.error(f"  {line}")
+                                conversion_log.append(f"  {line}")
 
             finally:
                 # Restore environment using ResourceManager
@@ -445,15 +578,19 @@ class EPUBConverter:
             # Verify output file was created
             if os.path.exists(output_file):
                 output_size = os.path.getsize(output_file)
+                conversion_log.append(f"CBZ file created successfully: {output_size} bytes")
                 self.logger.info(f"CBZ file created successfully: {output_size} bytes")
             else:
+                conversion_log.append(f"ERROR: CBZ file was not created: {output_file}")
                 self.logger.error(f"CBZ file was not created: {output_file}")
                 success = False
 
             return success
 
         except Exception as e:
-            self.logger.error(f"Error creating CBZ: {str(e)}")
+            error_msg = f"Error creating CBZ: {str(e)}"
+            conversion_log.append(f"ERROR: {error_msg}")
+            self.logger.error(error_msg)
             return False
         finally:
             # Clean up temporary zip file
