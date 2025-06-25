@@ -166,6 +166,9 @@ class EPUBConverter:
             else:
                 conversion_log.append(f"Conversion failed: {os.path.basename(input_file)}")
                 self.logger.error(f"Conversion failed: {os.path.basename(input_file)}")
+                
+                # Write error log even when returning False without exception
+                self._write_error_log(input_file, output_directory, conversion_log, status_callback)
 
             return success
 
@@ -176,62 +179,8 @@ class EPUBConverter:
             if status_callback:
                 status_callback(f"Error: {str(e)}")
             
-            # If conversion failed and we're not in debug mode, write a temporary log file
-            if not is_debug_enabled() and conversion_log:
-                try:
-                    # Write conversion log to desktop for debugging
-                    # Use more reliable method for Windows desktop path
-                    if platform.system() == "Windows":
-                        # Try Windows-specific environment variables first
-                        desktop_path = os.environ.get('USERPROFILE')
-                        if desktop_path:
-                            desktop_path = os.path.join(desktop_path, 'Desktop')
-                        else:
-                            # Fallback to expanduser
-                            desktop_path = os.path.expanduser("~/Desktop")
-                    else:
-                        desktop_path = os.path.expanduser("~/Desktop")
-                    
-                    # Ensure desktop directory exists
-                    if not os.path.exists(desktop_path):
-                        # Try to create it or use temp directory as fallback
-                        try:
-                            os.makedirs(desktop_path, exist_ok=True)
-                        except:
-                            desktop_path = tempfile.gettempdir()
-                            print(f"[WARNING] Using temp directory for error log: {desktop_path}")
-                    
-                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                    error_log_path = os.path.join(desktop_path, f"eReader_CBZ_Error_{timestamp}.txt")
-                    
-                    with open(error_log_path, 'w', encoding='utf-8') as f:
-                        f.write("eReader CBZ Manga Converter - Conversion Error Log\n")
-                        f.write("=" * 60 + "\n")
-                        f.write(f"Time: {datetime.datetime.now()}\n")
-                        f.write(f"Platform: {platform.system()}\n")
-                        f.write(f"Python: {sys.version}\n")
-                        f.write(f"Input file: {input_file}\n")
-                        f.write(f"Output directory: {output_directory}\n")
-                        f.write("=" * 60 + "\n\n")
-                        f.write("Conversion Log:\n")
-                        for log_entry in conversion_log:
-                            f.write(f"{log_entry}\n")
-                        
-                        # Add PATH info for debugging
-                        f.write("\n" + "=" * 60 + "\n")
-                        f.write("Environment Information:\n")
-                        f.write(f"PATH: {os.environ.get('PATH', 'Not set')}\n")
-                        f.write(f"Current directory: {os.getcwd()}\n")
-                    
-                    # Update status to inform user about error log
-                    if status_callback:
-                        status_callback(f"Error log saved to: {error_log_path}")
-                        
-                    print(f"[ERROR LOG] Conversion error log written to: {error_log_path}")
-                except Exception as log_error:
-                    self.logger.error(f"Failed to write error log: {log_error}")
-                    if status_callback:
-                        status_callback(f"Failed to write error log: {log_error}")
+            # Write error log on exception
+            self._write_error_log(input_file, output_directory, conversion_log, status_callback)
             
             return False
         finally:
@@ -242,6 +191,73 @@ class EPUBConverter:
                     self.logger.debug(f"Cleaned up temporary directory: {temp_dir}")
                 except Exception as e:
                     self.logger.warning(f"Failed to clean up temporary directory: {e}")
+
+    def _write_error_log(self, input_file, output_directory, conversion_log, status_callback=None):
+        """Write error log to desktop or temp directory"""
+        from ..logger_config import is_debug_enabled
+        
+        # Always write error log when conversion fails, regardless of debug mode
+        if conversion_log:
+            try:
+                # Write conversion log to desktop for debugging
+                # Use more reliable method for Windows desktop path
+                if platform.system() == "Windows":
+                    # Try Windows-specific environment variables first
+                    desktop_path = os.environ.get('USERPROFILE')
+                    if desktop_path:
+                        desktop_path = os.path.join(desktop_path, 'Desktop')
+                    else:
+                        # Fallback to expanduser
+                        desktop_path = os.path.expanduser("~/Desktop")
+                else:
+                    desktop_path = os.path.expanduser("~/Desktop")
+                
+                # Ensure desktop directory exists
+                if not os.path.exists(desktop_path):
+                    # Try to create it or use temp directory as fallback
+                    try:
+                        os.makedirs(desktop_path, exist_ok=True)
+                    except:
+                        desktop_path = tempfile.gettempdir()
+                        print(f"[WARNING] Using temp directory for error log: {desktop_path}")
+                
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                error_log_path = os.path.join(desktop_path, f"eReader_CBZ_Error_{timestamp}.txt")
+                
+                with open(error_log_path, 'w', encoding='utf-8') as f:
+                    f.write("eReader CBZ Manga Converter - Conversion Error Log\n")
+                    f.write("=" * 60 + "\n")
+                    f.write(f"Time: {datetime.datetime.now()}\n")
+                    f.write(f"Platform: {platform.system()}\n")
+                    f.write(f"Python: {sys.version}\n")
+                    f.write(f"Input file: {input_file}\n")
+                    f.write(f"Output directory: {output_directory}\n")
+                    f.write("=" * 60 + "\n\n")
+                    f.write("Conversion Log:\n")
+                    for log_entry in conversion_log:
+                        f.write(f"{log_entry}\n")
+                    
+                    # Add PATH info for debugging
+                    f.write("\n" + "=" * 60 + "\n")
+                    f.write("Environment Information:\n")
+                    f.write(f"PATH: {os.environ.get('PATH', 'Not set')}\n")
+                    f.write(f"Current directory: {os.getcwd()}\n")
+                    
+                    # Add frozen state info
+                    f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
+                    if hasattr(sys, '_MEIPASS'):
+                        f.write(f"_MEIPASS: {sys._MEIPASS}\n")
+                    f.write(f"Executable: {sys.executable}\n")
+                
+                # Update status to inform user about error log
+                if status_callback:
+                    status_callback(f"Error log saved to: {error_log_path}")
+                    
+                print(f"[ERROR LOG] Conversion error log written to: {error_log_path}")
+            except Exception as log_error:
+                self.logger.error(f"Failed to write error log: {log_error}")
+                if status_callback:
+                    status_callback(f"Failed to write error log: {log_error}")
 
     def _process_epub_structure(self, temp_dir):
         """Process EPUB structure and return ordered HTML files"""
