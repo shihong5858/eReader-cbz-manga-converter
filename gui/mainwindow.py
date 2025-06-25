@@ -864,7 +864,21 @@ class MainWindow(QMainWindow):
             else:
                 enable_debug()
                 self.logger.info("Debug mode enabled via keyboard shortcut")
-                status_text = "Debug mode enabled (log file created on Desktop)"
+                
+                # Import here to avoid circular imports
+                from components.logger_config import get_log_file
+                
+                # Get the actual log file path to provide user feedback
+                log_file_path = get_log_file()
+                if log_file_path:
+                    # Extract just the directory name for display
+                    log_dir = log_file_path.parent.name
+                    if log_dir.lower() == 'desktop':
+                        status_text = "Debug mode enabled (log file created on Desktop)"
+                    else:
+                        status_text = f"Debug mode enabled (log file created in {log_dir})"
+                else:
+                    status_text = "Debug mode enabled (console logging only)"
             
             # Update window title based on new debug state
             self._update_title_for_debug_state()
@@ -872,9 +886,13 @@ class MainWindow(QMainWindow):
             # Briefly show status
             if hasattr(self, 'progress_status'):
                 self.progress_status.setText(status_text)
-                QTimer.singleShot(3000, lambda: self.progress_status.setText(""))
+                QTimer.singleShot(5000, lambda: self.progress_status.setText(""))  # Show for 5 seconds
                 
         except Exception as e:
             self.logger.error(f"Failed to toggle debug mode: {e}")
+            # Show error to user
+            if hasattr(self, 'progress_status'):
+                self.progress_status.setText("Failed to toggle debug mode")
+                QTimer.singleShot(3000, lambda: self.progress_status.setText(""))
 
 

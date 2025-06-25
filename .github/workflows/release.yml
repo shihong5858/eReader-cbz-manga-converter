@@ -22,33 +22,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            platform: linux
-            artifact-name: linux-build
-            build-command: "python build.py build-linux"
-            setup-deps: |
-              sudo apt-get update -qq
-              sudo apt-get install -y -qq libgl1 libxcb-xinerama0 libfontconfig1 libdbus-1-3 libegl1-mesa libxkbcommon-x11-0 libxkbcommon0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 p7zip-full || echo "Some packages may not be available"
+          # Temporarily only build Windows for testing debug logging fix
           - os: windows-latest
             platform: windows
             artifact-name: windows-build
             build-command: "python build.py build-win"
             setup-deps: |
               choco install 7zip -y
-          - os: macos-13
-            platform: macos-intel
-            artifact-name: macos-intel-build
-            build-command: "python build.py build-mac"
-            setup-deps: |
-              npm install -g appdmg
-              brew install p7zip
-          - os: macos-latest
-            platform: macos-arm
-            artifact-name: macos-arm-build
-            build-command: "python build.py build-mac"
-            setup-deps: |
-              npm install -g appdmg
-              brew install p7zip
+          # Commented out other platforms for testing
+          # - os: ubuntu-latest
+          #   platform: linux
+          #   artifact-name: linux-build
+          #   build-command: "python build.py build-linux"
+          #   setup-deps: |
+          #     sudo apt-get update -qq
+          #     sudo apt-get install -y -qq libgl1 libxcb-xinerama0 libfontconfig1 libdbus-1-3 libegl1-mesa libxkbcommon-x11-0 libxkbcommon0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 p7zip-full || echo "Some packages may not be available"
+          # - os: macos-13
+          #   platform: macos-intel
+          #   artifact-name: macos-intel-build
+          #   build-command: "python build.py build-mac"
+          #   setup-deps: |
+          #     npm install -g appdmg
+          #     brew install p7zip
+          # - os: macos-latest
+          #   platform: macos-arm
+          #   artifact-name: macos-arm-build
+          #   build-command: "python build.py build-mac"
+          #   setup-deps: |
+          #     npm install -g appdmg
+          #     brew install p7zip
     
     runs-on: ${{ matrix.os }}
     
