@@ -131,6 +131,59 @@ if os.path.exists(kcc_dir):
 else:
     logger.error(f"KCC directory not found: {kcc_dir}")
 
+def setup_global_exception_handler():
+    """Setup global exception handler to catch and log all unhandled exceptions"""
+    import traceback
+    
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        
+        logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+        
+        # Write error log to desktop
+        try:
+            import platform
+            if platform.system() == "Windows":
+                desktop_path = os.environ.get('USERPROFILE', os.path.expanduser('~'))
+                desktop_path = os.path.join(desktop_path, 'Desktop')
+            else:
+                desktop_path = os.path.expanduser("~/Desktop")
+            
+            if not os.path.exists(desktop_path):
+                desktop_path = os.path.dirname(sys.executable)
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            error_log_path = os.path.join(desktop_path, f"eReader_Critical_Error_{timestamp}.txt")
+            
+            with open(error_log_path, 'w', encoding='utf-8') as f:
+                f.write("eReader CBZ Manga Converter - Critical Error\n")
+                f.write("=" * 60 + "\n")
+                f.write(f"Time: {datetime.datetime.now()}\n")
+                f.write(f"Platform: {platform.system()}\n")
+                f.write(f"Python: {sys.version}\n")
+                f.write(f"Executable: {sys.executable}\n")
+                f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
+                if hasattr(sys, '_MEIPASS'):
+                    f.write(f"_MEIPASS: {sys._MEIPASS}\n")
+                f.write("=" * 60 + "\n\n")
+                f.write("Exception:\n")
+                f.write(f"Type: {exc_type.__name__}\n")
+                f.write(f"Value: {exc_value}\n\n")
+                f.write("Traceback:\n")
+                f.write(''.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+                f.write("\n")
+                f.write("Environment:\n")
+                f.write(f"PATH: {os.environ.get('PATH', 'Not set')}\n")
+                f.write(f"Current directory: {os.getcwd()}\n")
+            
+            print(f"[CRITICAL ERROR] Error log written to: {error_log_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to write critical error log: {e}")
+    
+    sys.excepthook = handle_exception
+
 def main():
     # Set multiprocessing start method for KCC compatibility
     try:
@@ -138,6 +191,9 @@ def main():
     except RuntimeError:
         # Already set, ignore
         pass
+    
+    # Setup global exception handler
+    setup_global_exception_handler()
     
     # Check if this is a multiprocessing child process - if so, exit early
     if len(sys.argv) > 1:

@@ -1,5 +1,8 @@
 import logging
 import os
+import sys
+import datetime
+import tempfile
 
 from PySide6.QtCore import QThread, Signal
 
@@ -72,6 +75,47 @@ class ConversionWorker(QThread):
         except Exception as e:
             self.logger.warning(f"Error updating progress: {e}")
 
+    def _write_worker_error_log(self, error_msg, traceback_info=None):
+        """Write worker-level error log"""
+        try:
+            # Determine log path
+            if sys.platform == "win32":
+                desktop_path = os.environ.get('USERPROFILE', os.path.expanduser('~'))
+                desktop_path = os.path.join(desktop_path, 'Desktop')
+            else:
+                desktop_path = os.path.expanduser("~/Desktop")
+            
+            if not os.path.exists(desktop_path):
+                desktop_path = tempfile.gettempdir()
+            
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            error_log_path = os.path.join(desktop_path, f"eReader_Worker_Error_{timestamp}.txt")
+            
+            with open(error_log_path, 'w', encoding='utf-8') as f:
+                f.write("eReader CBZ Manga Converter - Worker Error Log\n")
+                f.write("=" * 60 + "\n")
+                f.write(f"Time: {datetime.datetime.now()}\n")
+                f.write(f"Platform: {sys.platform}\n")
+                f.write(f"Input file: {self.input_file}\n")
+                f.write(f"Output directory: {self.output_dir}\n")
+                f.write(f"Error: {error_msg}\n")
+                f.write("=" * 60 + "\n\n")
+                
+                if traceback_info:
+                    f.write("Traceback:\n")
+                    f.write(traceback_info)
+                    f.write("\n")
+                
+                f.write("Environment:\n")
+                f.write(f"Frozen: {getattr(sys, 'frozen', False)}\n")
+                f.write(f"Executable: {sys.executable}\n")
+                f.write(f"PATH: {os.environ.get('PATH', 'Not set')}\n")
+            
+            self.status.emit(f"Worker error log saved to: {error_log_path}")
+            print(f"[WORKER ERROR LOG] Error log written to: {error_log_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to write worker error log: {e}")
+
     def run(self):
         """Run the conversion process."""
         try:
@@ -93,13 +137,19 @@ class ConversionWorker(QThread):
                 self.completed.emit(True)
                 self.logger.info(f"Conversion completed successfully: {os.path.basename(self.input_file)}")
             else:
-                self.error.emit("Conversion failed")
+                error_msg = "Conversion failed - check error log on Desktop"
+                self.error.emit(error_msg)
                 self.completed.emit(False)
                 self.logger.error(f"Conversion failed: {os.path.basename(self.input_file)}")
 
         except Exception as e:
+            import traceback
             error_msg = f"Worker error: {str(e)}"
             self.logger.error(f"Worker error for {os.path.basename(self.input_file)}: {e}")
+            
+            # Write detailed error log
+            self._write_worker_error_log(error_msg, traceback.format_exc())
+            
             self.error.emit(error_msg)
             self.completed.emit(False)
 
