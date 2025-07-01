@@ -626,15 +626,39 @@ class MainWindow(QMainWindow):
             )
 
     def handle_error(self, error_msg):
-        """Handle error messages from the worker."""
-        total_files = len(self.input_files)
-        if total_files == 1:
-            self.progress_status.setText(f"Error: {error_msg}")
-        else:
-            self.progress_status.setText(
-                f"Error in file {self.current_file_index + 1} of {total_files}: {error_msg}"
-            )
+        """Handle conversion errors with enhanced logging"""
         self.logger.error(f"Conversion error: {error_msg}")
+        
+        # Format error message with more context
+        error_display = f"Conversion failed: {error_msg}"
+        
+        # Get log file path for user reference
+        from components.logger_config import get_log_file
+        log_file_path = get_log_file()
+        
+        if log_file_path and log_file_path.exists():
+            # Show log file location to user
+            log_dir = log_file_path.parent
+            if log_dir.name.lower() == 'desktop':
+                error_display += f"\n\nDetailed log saved to Desktop: {log_file_path.name}"
+            else:
+                error_display += f"\n\nDetailed log saved to: {log_file_path}"
+        else:
+            # If no log file, suggest enabling debug mode
+            error_display += "\n\nFor detailed error information, enable debug mode (Ctrl+Shift+D) and retry."
+        
+        self.progress_status.setText(error_display)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                background: #f0f0f0;
+            }
+            QProgressBar::chunk {
+                background: #f44336;
+                border-radius: 3px;
+            }
+        """)
 
     def file_processed(self, success):
         """Handle file processing completion."""
@@ -661,56 +685,78 @@ class MainWindow(QMainWindow):
             self.conversion_completed()
 
     def conversion_completed(self):
-        self.progress_bar.setValue(100)
-        self.progress_bar.setFormat("100%")
+        """Handle completion of all conversions with enhanced cleanup"""
+        self.logger.info("All conversions completed")
+        self.worker = None
+        
+        # Get conversion statistics
+        total_files = len(self.input_files)
+        successful_files = sum(1 for success in self.file_results if success)
+        failed_files = total_files - successful_files
+        
+        # Update UI
+        if failed_files == 0:
+            success_message = f"All {total_files} file(s) converted successfully!"
+            self.progress_status.setText(success_message)
+            self.progress_bar.setStyleSheet("""
+                QProgressBar {
+                    border: 2px solid #ddd;
+                    border-radius: 5px;
+                    background: #f0f0f0;
+                }
+                QProgressBar::chunk {
+                    background: #4CAF50;
+                    border-radius: 3px;
+                }
+            """)
+            
+            # Clean up log file if no errors occurred and not in debug mode
+            from components.logger_config import _dynamic_logger
+            if not is_debug_enabled():
+                QTimer.singleShot(5000, _dynamic_logger.cleanup_log_file_if_needed)
+                
+        else:
+            failure_message = f"Conversion completed with {failed_files} error(s) out of {total_files} file(s)."
+            
+            # Add log file information for failed conversions
+            from components.logger_config import get_log_file
+            log_file_path = get_log_file()
+            
+            if log_file_path and log_file_path.exists():
+                log_dir = log_file_path.parent
+                if log_dir.name.lower() == 'desktop':
+                    failure_message += f"\n\nError details saved to Desktop: {log_file_path.name}"
+                else:
+                    failure_message += f"\n\nError details saved to: {log_file_path}"
+            else:
+                failure_message += "\n\nFor detailed error information, enable debug mode (Ctrl+Shift+D) and retry."
+                
+            self.progress_status.setText(failure_message)
+            self.progress_bar.setStyleSheet("""
+                QProgressBar {
+                    border: 2px solid #ddd;
+                    border-radius: 5px;
+                    background: #f0f0f0;
+                }
+                QProgressBar::chunk {
+                    background: #FF9800;
+                    border-radius: 3px;
+                }
+            """)
 
-        # Re-enable UI elements after conversion
-        self.convert_button.setEnabled(True)
-        self.select_input_button.setEnabled(True)
-        self.output_button.setEnabled(True)
-        self.options_input.setEnabled(True)
-
-        # Re-enable clicking on path labels
-        self.input_path_label.setProperty("clickable", True)
-        self.output_path.setProperty("clickable", True)
-        self.input_path_label.setCursor(Qt.PointingHandCursor)
-        self.output_path.setCursor(Qt.PointingHandCursor)
-        self.input_path_label.style().unpolish(self.input_path_label)
-        self.input_path_label.style().polish(self.input_path_label)
-        self.output_path.style().unpolish(self.output_path)
-        self.output_path.style().polish(self.output_path)
-
-        # Re-enable drag-drop area
+        # Re-enable controls
         self.drop_area.setProperty("disabled", False)
-        self.drop_area.setCursor(Qt.PointingHandCursor)
         self.drop_area.style().unpolish(self.drop_area)
         self.drop_area.style().polish(self.drop_area)
+        self.select_input_button.setEnabled(True)
+        self.output_button.setEnabled(True)
+        self.device_combo.setEnabled(True)
+        self.options_input.setEnabled(True)
+        self.convert_button.setEnabled(True)
+        self.convert_button.setText("Convert")
 
-        # Update status
-        total_files = len(self.input_files)
-        if self.current_file_index == total_files:
-            if total_files == 1:
-                self.progress_status.setText("Conversion completed successfully!")
-            else:
-                self.progress_status.setText(f"All {total_files} files converted successfully!")
-        else:
-            self.progress_status.setText(
-                f"Completed with errors ({self.current_file_index} of {total_files} files)"
-            )
-
-        # Reset state
-        self.input_files = []
-        self.current_file_index = 0
-        self.input_path_label.setText("")
-        self.input_path_label.setProperty("hasPath", False)
-        self.input_path_label.style().unpolish(self.input_path_label)
-        self.input_path_label.style().polish(self.input_path_label)
-
-        # Show input browse button again
-        self.select_input_button.show()
-
-        # Update convert button state after resetting input files
-        self.update_convert_button_state()
+        # Update title to remove processing indicator
+        self._update_title_for_debug_state()
 
     def update_convert_button_state(self):
         has_input = bool(self.input_files)
@@ -855,7 +901,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(self.base_title)
 
     def _toggle_debug_mode(self):
-        """Hidden debug mode toggle via keyboard shortcut."""
+        """Hidden debug mode toggle via keyboard shortcut with immediate log file creation."""
         try:
             if is_debug_enabled():
                 disable_debug()
@@ -879,6 +925,15 @@ class MainWindow(QMainWindow):
                         status_text = f"Debug mode enabled (log file created in {log_dir})"
                 else:
                     status_text = "Debug mode enabled (console logging only)"
+                
+                # Immediately log some useful information for debugging
+                self.logger.info("Debug mode activated by user")
+                self.logger.info(f"Current input files: {self.input_files}")
+                self.logger.info(f"Output directory: {self.output_path.text()}")
+                if hasattr(self, 'worker') and self.worker:
+                    self.logger.info("Conversion worker is currently active")
+                else:
+                    self.logger.info("No active conversion worker")
             
             # Update window title based on new debug state
             self._update_title_for_debug_state()

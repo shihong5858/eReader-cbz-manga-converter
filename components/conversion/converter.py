@@ -374,6 +374,8 @@ class EPUBConverter:
                     raise RuntimeError(f"KCC module not found: {e}")
 
                 self.logger.info("Starting KCC conversion...")
+                self.logger.info(f"KCC command args: {' '.join(kcc_args)}")
+                
                 import time
                 start_time = time.time()
                 
@@ -385,32 +387,111 @@ class EPUBConverter:
                 old_stdout = sys.stdout
                 old_stderr = sys.stderr
                 
+                # Track progress during KCC conversion
+                progress_timer = None
+                conversion_start_time = time.time()
+                
+                def update_kcc_progress():
+                    """Update progress during KCC conversion"""
+                    elapsed = time.time() - conversion_start_time
+                    if elapsed < 30:  # First 30 seconds: 50-70%
+                        progress = int(50 + (elapsed / 30.0) * 20)
+                    elif elapsed < 60:  # Next 30 seconds: 70-85%
+                        progress = int(70 + ((elapsed - 30) / 30.0) * 15)
+                    else:  # After 60 seconds: 85-95%
+                        progress = min(95, int(85 + ((elapsed - 60) / 60.0) * 10))
+                    
+                    if progress_callback:
+                        progress_callback(progress)
+                    
+                    # Update status messages
+                    if elapsed < 15:
+                        if status_callback:
+                            status_callback("Processing with KCC...")
+                    elif elapsed < 30:
+                        if status_callback:
+                            status_callback("Optimizing images...")
+                    elif elapsed < 45:
+                        if status_callback:
+                            status_callback("Creating CBZ file...")
+                    elif elapsed < 60:
+                        if status_callback:
+                            status_callback("Finalizing conversion...")
+                    else:
+                        if status_callback:
+                            status_callback("Nearly complete...")
+                
+                # Start progress updates during KCC conversion
+                from threading import Timer
+                def schedule_progress_update():
+                    update_kcc_progress()
+                    # Schedule next update
+                    nonlocal progress_timer
+                    progress_timer = Timer(2.0, schedule_progress_update)
+                    progress_timer.start()
+                
+                progress_timer = Timer(2.0, schedule_progress_update)
+                progress_timer.start()
+                
                 try:
                     # Redirect stdout/stderr to capture KCC output
                     sys.stdout = captured_stdout
                     sys.stderr = captured_stderr
                     
-                    try:
-                        kcc_result = kcc_main(kcc_args)
-                        success = kcc_result == 0
-                        self.logger.debug(f"KCC main returned: {kcc_result}")
-                    except SystemExit as e:
-                        success = e.code == 0
-                        self.logger.debug(f"KCC exited with code: {e.code}")
-                    except Exception as e:
-                        self.logger.error(f"KCC execution error: {e}")
+                    # Add timeout for KCC conversion to prevent indefinite hanging
+                    import signal
+                    import threading
+                    
+                    kcc_result = None
+                    kcc_exception = None
+                    conversion_timeout = 300  # 5 minutes timeout
+                    
+                    def run_kcc():
+                        nonlocal kcc_result, kcc_exception
+                        try:
+                            kcc_result = kcc_main(kcc_args)
+                        except SystemExit as e:
+                            kcc_result = e.code
+                        except Exception as e:
+                            kcc_exception = e
+                    
+                    # Run KCC in a separate thread with timeout
+                    kcc_thread = threading.Thread(target=run_kcc)
+                    kcc_thread.daemon = True
+                    kcc_thread.start()
+                    kcc_thread.join(timeout=conversion_timeout)
+                    
+                    if kcc_thread.is_alive():
+                        # Conversion timed out
+                        self.logger.error(f"KCC conversion timed out after {conversion_timeout} seconds")
+                        success = False
+                        if status_callback:
+                            status_callback("Conversion timed out")
+                    elif kcc_exception:
+                        # Exception occurred during conversion
+                        self.logger.error(f"KCC execution error: {kcc_exception}")
                         success = False
                         
                         # Log subprocess errors for debugging
-                        if hasattr(e, 'cmd') and hasattr(e, 'returncode'):
-                            self.logger.error(f"Command that failed: {e.cmd}")
-                            self.logger.error(f"Return code: {e.returncode}")
-                            if hasattr(e, 'stderr') and e.stderr:
-                                self.logger.error(f"Process stderr: {e.stderr}")
-                            if hasattr(e, 'stdout') and e.stdout:
-                                self.logger.error(f"Process stdout: {e.stdout}")
+                        if hasattr(kcc_exception, 'cmd') and hasattr(kcc_exception, 'returncode'):
+                            self.logger.error(f"Command that failed: {kcc_exception.cmd}")
+                            self.logger.error(f"Return code: {kcc_exception.returncode}")
+                            if hasattr(kcc_exception, 'stderr') and kcc_exception.stderr:
+                                self.logger.error(f"Process stderr: {kcc_exception.stderr}")
+                            if hasattr(kcc_exception, 'stdout') and kcc_exception.stdout:
+                                self.logger.error(f"Process stdout: {kcc_exception.stdout}")
+                    else:
+                        # Normal completion
+                        success = kcc_result == 0
+                        self.logger.info(f"KCC main returned: {kcc_result}")
+                        if not success:
+                            self.logger.error(f"KCC conversion failed with exit code: {kcc_result}")
                 
                 finally:
+                    # Stop progress timer
+                    if progress_timer:
+                        progress_timer.cancel()
+                    
                     # Restore stdout/stderr
                     sys.stdout = old_stdout
                     sys.stderr = old_stderr
@@ -418,7 +499,7 @@ class EPUBConverter:
                     execution_time = time.time() - start_time
                     self.logger.info(f"KCC completed in {execution_time:.2f}s")
                     
-                                                        # Log captured output for debugging
+                    # Log captured output for debugging
                     stdout_content = captured_stdout.getvalue()
                     stderr_content = captured_stderr.getvalue()
                     
