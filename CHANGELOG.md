@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.5] - 2025-07-01
+
+### Updated
+- mozjpeg-lossless-optimization library updated to 1.3.1
+- Improved JPEG lossless optimization performance and bug fixes
+
 ## [1.2.4] - 2025-06-25
 
 ### Fixed
