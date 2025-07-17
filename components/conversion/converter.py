@@ -609,11 +609,8 @@ class EPUBConverter:
                     if not img_src:
                         continue
                         
-                    if img_src.startswith('../'):
-                        img_src = img_src[3:]
-
                     # Convert image path to absolute path
-                    full_img_path = os.path.join(os.path.dirname(html_path), img_src)
+                    full_img_path = os.path.normpath(os.path.join(os.path.dirname(html_path), img_src))
                     if not os.path.exists(full_img_path):
                         full_img_path = os.path.join(temp_dir, img_src)
 

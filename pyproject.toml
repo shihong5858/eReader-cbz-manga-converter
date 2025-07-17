@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eReader-CBZ-Manga-Converter"
-version = "1.2.6"
+version = "1.2.7"
 description = "Convert EPUB files to CBZ format optimized for eReaders"
 readme = "README.md"
 requires-python = ">=3.8"

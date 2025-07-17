@@ -1,6 +1,11 @@
 # Changelog
 
-## [1.2.6] - 2025-01-15
+## [1.2.7] - 2025-07-18
+
+### Fixed
+- EPUB relative image path resolution using proper normpath handling
+
+## [1.2.6] - 2025-07-15
 
 ### Fixed
 - Windows file permission errors during KCC conversion with retry mechanism
