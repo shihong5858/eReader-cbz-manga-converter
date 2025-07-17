@@ -56,6 +56,14 @@ jobs:
           pip install -e ".[build]"
         shell: bash
         
+      - name: Set encoding for Windows
+        if: runner.os == 'Windows'
+        run: |
+          echo "Setting Windows encoding to UTF-8"
+          echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+          echo "PYTHONUTF8=1" >> $GITHUB_ENV
+        shell: bash
+        
       - name: Create test script for Windows fixes
         run: |
           cat > test_windows_fixes.py << 'EOF'
@@ -82,8 +90,8 @@ jobs:
                   from components.logger_config import get_desktop_path
                   
                   desktop_path = get_desktop_path()
-                  print(f"✓ Desktop path detected: {desktop_path}")
-                  print(f"✓ Desktop path exists: {os.path.exists(desktop_path)}")
+                  print(f"[PASS] Desktop path detected: {desktop_path}")
+                  print(f"[PASS] Desktop path exists: {os.path.exists(desktop_path)}")
                   
                   # Test if we can write to the detected path
                   test_file = os.path.join(desktop_path, '.write_test_github_actions')
@@ -91,13 +99,13 @@ jobs:
                       with open(test_file, 'w') as f:
                           f.write('test')
                       os.remove(test_file)
-                      print("✓ Desktop path is writable")
+                      print("[PASS] Desktop path is writable")
                   except Exception as e:
-                      print(f"⚠ Desktop path write test failed: {e}")
+                      print(f"[WARN] Desktop path write test failed: {e}")
                   
                   return True
               except Exception as e:
-                  print(f"✗ Desktop path test failed: {e}")
+                  print(f"[FAIL] Desktop path test failed: {e}")
                   return False
           
           def test_logger_creation():
@@ -109,7 +117,7 @@ jobs:
                   
                   # Test normal mode (should create log file on error)
                   log_file_path = setup_logging(debug_mode=False)
-                  print(f"✓ Normal mode setup completed, log path: {log_file_path}")
+                  print(f"[PASS] Normal mode setup completed, log path: {log_file_path}")
                   
                   # Get a logger and trigger error logging
                   logger = get_logger("test_windows")
@@ -119,23 +127,23 @@ jobs:
                   # Check if log file was created
                   actual_log_path = _dynamic_logger.get_log_file_path()
                   if actual_log_path and actual_log_path.exists():
-                      print(f"✓ Log file created: {actual_log_path}")
-                      print(f"✓ Log file size: {actual_log_path.stat().st_size} bytes")
+                      print(f"[PASS] Log file created: {actual_log_path}")
+                      print(f"[PASS] Log file size: {actual_log_path.stat().st_size} bytes")
                       
                       # Read and display first few lines
                       with open(actual_log_path, 'r', encoding='utf-8') as f:
                           lines = f.readlines()[:5]
-                      print("✓ Log file content preview:")
+                      print("[PASS] Log file content preview:")
                       for line in lines:
                           print(f"    {line.strip()}")
                       
                       return True
                   else:
-                      print("✗ Log file was not created")
+                      print("[FAIL] Log file was not created")
                       return False
                       
               except Exception as e:
-                  print(f"✗ Logger creation test failed: {e}")
+                  print(f"[FAIL] Logger creation test failed: {e}")
                   return False
           
           def test_progress_worker():
@@ -153,20 +161,20 @@ jobs:
                   try:
                       # Test worker creation
                       worker = ConversionWorker(dummy_epub, tempfile.gettempdir())
-                      print("✓ Progress worker created successfully")
+                      print("[PASS] Progress worker created successfully")
                       
                       # Test progress update methods
                       worker.update_progress(25)
                       worker.update_progress("Processing images")
                       worker.update_progress("Running KCC conversion")
-                      print("✓ Progress update methods working")
+                      print("[PASS] Progress update methods working")
                       
                       return True
                   finally:
                       os.unlink(dummy_epub)
                       
               except Exception as e:
-                  print(f"✗ Progress worker test failed: {e}")
+                  print(f"[FAIL] Progress worker test failed: {e}")
                   return False
           
           def test_converter_timeout_protection():
@@ -177,23 +185,23 @@ jobs:
                   from components.conversion.converter import EPUBConverter
                   
                   converter = EPUBConverter()
-                  print("✓ Converter instance created")
+                  print("[PASS] Converter instance created")
                   
                   # Test that timeout mechanisms are in place (just verify the code structure)
                   import inspect
                   source = inspect.getsource(converter._create_cbz)
                   
                   if "timeout" in source.lower():
-                      print("✓ Timeout protection code found")
+                      print("[PASS] Timeout protection code found")
                   if "threading" in source:
-                      print("✓ Threading support found")
+                      print("[PASS] Threading support found")
                   if "timer" in source.lower():
-                      print("✓ Timer mechanisms found")
+                      print("[PASS] Timer mechanisms found")
                   
                   return True
                   
               except Exception as e:
-                  print(f"✗ Converter timeout test failed: {e}")
+                  print(f"[FAIL] Converter timeout test failed: {e}")
                   return False
           
           def main():
@@ -216,10 +224,10 @@ jobs:
               print(f"Passed: {sum(results)}/{len(results)}")
               
               if all(results):
-                  print("✅ All Windows tests passed! Fixes are working correctly.")
+                  print("[SUCCESS] All Windows tests passed! Fixes are working correctly.")
                   return 0
               else:
-                  print("❌ Some Windows tests failed. Check the logs above.")
+                  print("[ERROR] Some Windows tests failed. Check the logs above.")
                   return 1
           
           if __name__ == "__main__":
@@ -240,20 +248,20 @@ jobs:
           try:
               # Test that GUI can be imported without errors
               from gui.mainwindow import MainWindow
-              print('✓ GUI MainWindow import successful')
+              print('[PASS] GUI MainWindow import successful')
               
               # Test logger components
               from components.logger_config import get_logger, get_desktop_path
-              print('✓ Logger components import successful')
+              print('[PASS] Logger components import successful')
               
               # Test conversion components
               from components.conversion.converter import EPUBConverter
               from components.conversion.progress_worker import ConversionWorker
-              print('✓ Conversion components import successful')
+              print('[PASS] Conversion components import successful')
               
-              print('✅ All critical components can be imported successfully')
+              print('[SUCCESS] All critical components can be imported successfully')
           except Exception as e:
-              print(f'❌ Import test failed: {e}')
+              print(f'[FAIL] Import test failed: {e}')
               sys.exit(1)
           "
         shell: bash
@@ -264,7 +272,7 @@ jobs:
           python -m py_compile components/conversion/converter.py
           python -m py_compile components/conversion/progress_worker.py
           python -m py_compile gui/mainwindow.py
-          echo "✅ All Python files compile without syntax errors"
+          echo "[SUCCESS] All Python files compile without syntax errors"
         shell: bash
         
       - name: Upload test artifacts

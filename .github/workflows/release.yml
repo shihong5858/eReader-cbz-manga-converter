@@ -93,6 +93,15 @@ jobs:
           pip install -e ".[build]"
         shell: bash
           
+      # Set encoding for Windows to handle Unicode properly
+      - name: Set encoding for Windows
+        if: matrix.platform == 'windows'
+        run: |
+          echo "Setting Windows encoding to UTF-8"
+          echo "PYTHONIOENCODING=utf-8" >> $GITHUB_ENV
+          echo "PYTHONUTF8=1" >> $GITHUB_ENV
+        shell: bash
+        
       # Test Windows progress and logging fixes before building
       - name: Test Windows progress and logging fixes
         if: matrix.platform == 'windows'
@@ -110,20 +119,20 @@ jobs:
               try:
                   from components.logger_config import get_desktop_path
                   desktop_path = get_desktop_path()
-                  print(f"✓ Desktop path: {desktop_path}")
-                  print(f"✓ Exists: {os.path.exists(desktop_path)}")
+                  print(f"[PASS] Desktop path: {desktop_path}")
+                  print(f"[PASS] Exists: {os.path.exists(desktop_path)}")
                   # Test write access
                   test_file = os.path.join(desktop_path, '.write_test_ga')
                   try:
                       with open(test_file, 'w') as f:
                           f.write('test')
                       os.remove(test_file)
-                      print("✓ Desktop writable")
+                      print("[PASS] Desktop writable")
                   except Exception as e:
-                      print(f"⚠ Write test failed: {e}")
+                      print(f"[WARN] Write test failed: {e}")
                   return True
               except Exception as e:
-                  print(f"✗ Failed: {e}")
+                  print(f"[FAIL] Failed: {e}")
                   return False
           
           def test_logger_creation():
@@ -137,14 +146,14 @@ jobs:
                   
                   log_path = _dynamic_logger.get_log_file_path()
                   if log_path and log_path.exists():
-                      print(f"✓ Log file: {log_path}")
-                      print(f"✓ Size: {log_path.stat().st_size} bytes")
+                      print(f"[PASS] Log file: {log_path}")
+                      print(f"[PASS] Size: {log_path.stat().st_size} bytes")
                       return True
                   else:
-                      print("✗ No log file created")
+                      print("[FAIL] No log file created")
                       return False
               except Exception as e:
-                  print(f"✗ Failed: {e}")
+                  print(f"[FAIL] Failed: {e}")
                   return False
           
           def test_progress_worker():
@@ -158,12 +167,12 @@ jobs:
                       worker = ConversionWorker(dummy_epub, tempfile.gettempdir())
                       worker.update_progress(25)
                       worker.update_progress("Processing images")
-                      print("✓ Progress worker OK")
+                      print("[PASS] Progress worker OK")
                       return True
                   finally:
                       os.unlink(dummy_epub)
               except Exception as e:
-                  print(f"✗ Failed: {e}")
+                  print(f"[FAIL] Failed: {e}")
                   return False
           
           def test_converter_timeout():
@@ -175,10 +184,10 @@ jobs:
                   source = inspect.getsource(converter._create_cbz)
                   checks = ["timeout", "threading", "timer"]
                   found = sum(1 for check in checks if check in source.lower())
-                  print(f"✓ Timeout mechanisms: {found}/{len(checks)} found")
+                  print(f"[PASS] Timeout mechanisms: {found}/{len(checks)} found")
                   return found >= 2
               except Exception as e:
-                  print(f"✗ Failed: {e}")
+                  print(f"[FAIL] Failed: {e}")
                   return False
           
           def main():
@@ -200,10 +209,10 @@ jobs:
               print(f"Results: {passed}/{len(results)} passed")
               
               if all(results):
-                  print("✅ All Windows fixes working!")
+                  print("[SUCCESS] All Windows fixes working!")
                   return 0
               else:
-                  print("❌ Some tests failed")
+                  print("[ERROR] Some tests failed")
                   return 1
           
           if __name__ == "__main__":
