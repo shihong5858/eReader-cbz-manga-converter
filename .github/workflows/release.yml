@@ -5,6 +5,8 @@ name: Build and Release
   push:
     tags:
       - "v*.*.*"
+    branches:
+      - "fix/windows-progress-logging-issues"  # Add our fix branch
     paths-ignore:
       - '**.md'
       - '**.MD'
@@ -30,27 +32,27 @@ jobs:
             setup-deps: |
               choco install 7zip -y
           # Commented out other platforms for testing
-          # - os: ubuntu-latest
-          #   platform: linux
-          #   artifact-name: linux-build
-          #   build-command: "python build.py build-linux"
-          #   setup-deps: |
-          #     sudo apt-get update -qq
-          #     sudo apt-get install -y -qq libgl1 libxcb-xinerama0 libfontconfig1 libdbus-1-3 libegl1-mesa libxkbcommon-x11-0 libxkbcommon0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 p7zip-full || echo "Some packages may not be available"
-          # - os: macos-13
-          #   platform: macos-intel
-          #   artifact-name: macos-intel-build
-          #   build-command: "python build.py build-mac"
-          #   setup-deps: |
-          #     npm install -g appdmg
-          #     brew install p7zip
-          # - os: macos-latest
-          #   platform: macos-arm
-          #   artifact-name: macos-arm-build
-          #   build-command: "python build.py build-mac"
-          #   setup-deps: |
-          #     npm install -g appdmg
-          #     brew install p7zip
+          - os: ubuntu-latest
+            platform: linux
+            artifact-name: linux-build
+            build-command: "python build.py build-linux"
+            setup-deps: |
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq libgl1 libxcb-xinerama0 libfontconfig1 libdbus-1-3 libegl1-mesa libxkbcommon-x11-0 libxkbcommon0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 p7zip-full || echo "Some packages may not be available"
+          - os: macos-13
+            platform: macos-intel
+            artifact-name: macos-intel-build
+            build-command: "python build.py build-mac"
+            setup-deps: |
+              npm install -g appdmg
+              brew install p7zip
+          - os: macos-latest
+            platform: macos-arm
+            artifact-name: macos-arm-build
+            build-command: "python build.py build-mac"
+            setup-deps: |
+              npm install -g appdmg
+              brew install p7zip
     
     runs-on: ${{ matrix.os }}
     
@@ -76,8 +78,6 @@ jobs:
         if: matrix.setup-deps != ''
         run: ${{ matrix.setup-deps }}
 
-
-
       - name: Setup KCC environment
         run: |
           python build.py kcc
@@ -91,6 +91,126 @@ jobs:
       - name: Install project dependencies
         run: |
           pip install -e ".[build]"
+        shell: bash
+          
+      # Test Windows progress and logging fixes before building
+      - name: Test Windows progress and logging fixes
+        if: matrix.platform == 'windows'
+        run: |
+          cat > test_windows_fixes.py << 'EOF'
+          #!/usr/bin/env python3
+          """Test Windows logging and progress fixes"""
+          import os, sys, platform, tempfile
+          from pathlib import Path
+          
+          sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+          
+          def test_windows_desktop_path():
+              print("Testing Windows desktop path detection...")
+              try:
+                  from components.logger_config import get_desktop_path
+                  desktop_path = get_desktop_path()
+                  print(f"✓ Desktop path: {desktop_path}")
+                  print(f"✓ Exists: {os.path.exists(desktop_path)}")
+                  # Test write access
+                  test_file = os.path.join(desktop_path, '.write_test_ga')
+                  try:
+                      with open(test_file, 'w') as f:
+                          f.write('test')
+                      os.remove(test_file)
+                      print("✓ Desktop writable")
+                  except Exception as e:
+                      print(f"⚠ Write test failed: {e}")
+                  return True
+              except Exception as e:
+                  print(f"✗ Failed: {e}")
+                  return False
+          
+          def test_logger_creation():
+              print("\nTesting logger creation...")
+              try:
+                  from components.logger_config import setup_logging, get_logger, _dynamic_logger
+                  setup_logging(debug_mode=False)
+                  logger = get_logger("test_windows")
+                  logger.info("Test info from GA")
+                  logger.error("Test error - should trigger log retention")
+                  
+                  log_path = _dynamic_logger.get_log_file_path()
+                  if log_path and log_path.exists():
+                      print(f"✓ Log file: {log_path}")
+                      print(f"✓ Size: {log_path.stat().st_size} bytes")
+                      return True
+                  else:
+                      print("✗ No log file created")
+                      return False
+              except Exception as e:
+                  print(f"✗ Failed: {e}")
+                  return False
+          
+          def test_progress_worker():
+              print("\nTesting progress worker...")
+              try:
+                  from components.conversion.progress_worker import ConversionWorker
+                  with tempfile.NamedTemporaryFile(suffix='.epub', delete=False) as tmp:
+                      tmp.write(b'dummy')
+                      dummy_epub = tmp.name
+                  try:
+                      worker = ConversionWorker(dummy_epub, tempfile.gettempdir())
+                      worker.update_progress(25)
+                      worker.update_progress("Processing images")
+                      print("✓ Progress worker OK")
+                      return True
+                  finally:
+                      os.unlink(dummy_epub)
+              except Exception as e:
+                  print(f"✗ Failed: {e}")
+                  return False
+          
+          def test_converter_timeout():
+              print("\nTesting converter timeout protection...")
+              try:
+                  from components.conversion.converter import EPUBConverter
+                  converter = EPUBConverter()
+                  import inspect
+                  source = inspect.getsource(converter._create_cbz)
+                  checks = ["timeout", "threading", "timer"]
+                  found = sum(1 for check in checks if check in source.lower())
+                  print(f"✓ Timeout mechanisms: {found}/{len(checks)} found")
+                  return found >= 2
+              except Exception as e:
+                  print(f"✗ Failed: {e}")
+                  return False
+          
+          def main():
+              print("Windows Fixes Test Suite")
+              print(f"Platform: {platform.system()} {platform.release()}")
+              print("=" * 50)
+              
+              tests = [
+                  test_windows_desktop_path,
+                  test_logger_creation, 
+                  test_progress_worker,
+                  test_converter_timeout
+              ]
+              
+              results = [test() for test in tests]
+              passed = sum(results)
+              
+              print(f"\n{'='*50}")
+              print(f"Results: {passed}/{len(results)} passed")
+              
+              if all(results):
+                  print("✅ All Windows fixes working!")
+                  return 0
+              else:
+                  print("❌ Some tests failed")
+                  return 1
+          
+          if __name__ == "__main__":
+              sys.exit(main())
+          EOF
+          
+          python test_windows_fixes.py
         shell: bash
           
       - name: Build binary

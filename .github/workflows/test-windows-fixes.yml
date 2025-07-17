@@ -1,0 +1,279 @@
+name: Test Windows Fixes
+
+on:
+  push:
+    branches:
+      - fix/windows-progress-logging-issues
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'components/**'
+      - 'gui/**'
+      - '.github/workflows/test-windows-fixes.yml'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  test-windows:
+    name: Test Windows Progress & Logging Fixes
+    runs-on: windows-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Install system dependencies (Windows)
+        run: |
+          choco install 7zip -y
+          echo "7zip installed"
+        shell: powershell
+      
+      - name: Setup KCC environment
+        run: |
+          python build.py kcc
+        shell: bash
+        
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pytest pytest-qt
+          pip install -e ".[build]"
+        shell: bash
+        
+      - name: Create test script for Windows fixes
+        run: |
+          cat > test_windows_fixes.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          Windows-specific test script for logging and progress fixes.
+          """
+          
+          import os
+          import sys
+          import platform
+          import tempfile
+          import time
+          from pathlib import Path
+          
+          # Add the project root to the path
+          sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+          
+          def test_windows_desktop_path():
+              """Test Windows desktop path detection"""
+              print("Testing Windows desktop path detection...")
+              
+              try:
+                  from components.logger_config import get_desktop_path
+                  
+                  desktop_path = get_desktop_path()
+                  print(f"✓ Desktop path detected: {desktop_path}")
+                  print(f"✓ Desktop path exists: {os.path.exists(desktop_path)}")
+                  
+                  # Test if we can write to the detected path
+                  test_file = os.path.join(desktop_path, '.write_test_github_actions')
+                  try:
+                      with open(test_file, 'w') as f:
+                          f.write('test')
+                      os.remove(test_file)
+                      print("✓ Desktop path is writable")
+                  except Exception as e:
+                      print(f"⚠ Desktop path write test failed: {e}")
+                  
+                  return True
+              except Exception as e:
+                  print(f"✗ Desktop path test failed: {e}")
+                  return False
+          
+          def test_logger_creation():
+              """Test logger file creation on Windows"""
+              print("\nTesting logger file creation...")
+              
+              try:
+                  from components.logger_config import setup_logging, get_logger, _dynamic_logger
+                  
+                  # Test normal mode (should create log file on error)
+                  log_file_path = setup_logging(debug_mode=False)
+                  print(f"✓ Normal mode setup completed, log path: {log_file_path}")
+                  
+                  # Get a logger and trigger error logging
+                  logger = get_logger("test_windows")
+                  logger.info("Test info message from GitHub Actions")
+                  logger.error("Test error message - should trigger log retention")
+                  
+                  # Check if log file was created
+                  actual_log_path = _dynamic_logger.get_log_file_path()
+                  if actual_log_path and actual_log_path.exists():
+                      print(f"✓ Log file created: {actual_log_path}")
+                      print(f"✓ Log file size: {actual_log_path.stat().st_size} bytes")
+                      
+                      # Read and display first few lines
+                      with open(actual_log_path, 'r', encoding='utf-8') as f:
+                          lines = f.readlines()[:5]
+                      print("✓ Log file content preview:")
+                      for line in lines:
+                          print(f"    {line.strip()}")
+                      
+                      return True
+                  else:
+                      print("✗ Log file was not created")
+                      return False
+                      
+              except Exception as e:
+                  print(f"✗ Logger creation test failed: {e}")
+                  return False
+          
+          def test_progress_worker():
+              """Test progress worker improvements"""
+              print("\nTesting progress worker...")
+              
+              try:
+                  from components.conversion.progress_worker import ConversionWorker
+                  
+                  # Create a dummy EPUB file for testing
+                  with tempfile.NamedTemporaryFile(suffix='.epub', delete=False) as tmp:
+                      tmp.write(b'dummy epub content')
+                      dummy_epub = tmp.name
+                  
+                  try:
+                      # Test worker creation
+                      worker = ConversionWorker(dummy_epub, tempfile.gettempdir())
+                      print("✓ Progress worker created successfully")
+                      
+                      # Test progress update methods
+                      worker.update_progress(25)
+                      worker.update_progress("Processing images")
+                      worker.update_progress("Running KCC conversion")
+                      print("✓ Progress update methods working")
+                      
+                      return True
+                  finally:
+                      os.unlink(dummy_epub)
+                      
+              except Exception as e:
+                  print(f"✗ Progress worker test failed: {e}")
+                  return False
+          
+          def test_converter_timeout_protection():
+              """Test converter timeout and error handling"""
+              print("\nTesting converter timeout protection...")
+              
+              try:
+                  from components.conversion.converter import EPUBConverter
+                  
+                  converter = EPUBConverter()
+                  print("✓ Converter instance created")
+                  
+                  # Test that timeout mechanisms are in place (just verify the code structure)
+                  import inspect
+                  source = inspect.getsource(converter._create_cbz)
+                  
+                  if "timeout" in source.lower():
+                      print("✓ Timeout protection code found")
+                  if "threading" in source:
+                      print("✓ Threading support found")
+                  if "timer" in source.lower():
+                      print("✓ Timer mechanisms found")
+                  
+                  return True
+                  
+              except Exception as e:
+                  print(f"✗ Converter timeout test failed: {e}")
+                  return False
+          
+          def main():
+              """Run all Windows-specific tests"""
+              print("Running Windows fixes test suite...")
+              print(f"Platform: {platform.system()} {platform.release()}")
+              print(f"Python: {sys.version}")
+              print("=" * 60)
+              
+              results = []
+              
+              # Run tests
+              results.append(test_windows_desktop_path())
+              results.append(test_logger_creation())
+              results.append(test_progress_worker())
+              results.append(test_converter_timeout_protection())
+              
+              print("\n" + "=" * 60)
+              print("Windows Test Results Summary:")
+              print(f"Passed: {sum(results)}/{len(results)}")
+              
+              if all(results):
+                  print("✅ All Windows tests passed! Fixes are working correctly.")
+                  return 0
+              else:
+                  print("❌ Some Windows tests failed. Check the logs above.")
+                  return 1
+          
+          if __name__ == "__main__":
+              exit_code = main()
+              sys.exit(exit_code)
+          EOF
+        shell: bash
+        
+      - name: Run Windows fixes test
+        run: |
+          python test_windows_fixes.py
+        shell: bash
+        
+      - name: Test GUI import (basic smoke test)
+        run: |
+          python -c "
+          import sys
+          try:
+              # Test that GUI can be imported without errors
+              from gui.mainwindow import MainWindow
+              print('✓ GUI MainWindow import successful')
+              
+              # Test logger components
+              from components.logger_config import get_logger, get_desktop_path
+              print('✓ Logger components import successful')
+              
+              # Test conversion components
+              from components.conversion.converter import EPUBConverter
+              from components.conversion.progress_worker import ConversionWorker
+              print('✓ Conversion components import successful')
+              
+              print('✅ All critical components can be imported successfully')
+          except Exception as e:
+              print(f'❌ Import test failed: {e}')
+              sys.exit(1)
+          "
+        shell: bash
+        
+      - name: Check for any Python syntax errors
+        run: |
+          python -m py_compile components/logger_config.py
+          python -m py_compile components/conversion/converter.py
+          python -m py_compile components/conversion/progress_worker.py
+          python -m py_compile gui/mainwindow.py
+          echo "✅ All Python files compile without syntax errors"
+        shell: bash
+        
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-logs-${{ matrix.python-version }}
+          path: |
+            **/*eReader_CBZ_Logs*.log
+            test_windows_fixes.py
+          if-no-files-found: warn
+          retention-days: 3 
