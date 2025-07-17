@@ -20,6 +20,7 @@ from typing import Optional
 def get_desktop_path() -> str:
     """
     Get the user's desktop directory path in a cross-platform way.
+    Windows Desktop detection improved for better compatibility.
     
     Returns:
         String path to the user's desktop directory
@@ -34,7 +35,7 @@ def get_desktop_path() -> str:
             os.path.expanduser('~')             # Fallback
         ]
         
-        # For HOMEPATH, we need to combine with HOMEDRIVE
+        # For HOMEDRIVE, we need to combine with HOMEPATH
         if desktop_paths[1] and os.environ.get('HOMEDRIVE'):
             desktop_paths[1] = os.environ.get('HOMEDRIVE') + desktop_paths[1]
         
@@ -45,6 +46,7 @@ def get_desktop_path() -> str:
                 desktop_candidates = [
                     os.path.join(base_path, 'Desktop'),
                     os.path.join(base_path, 'OneDrive', 'Desktop'),  # OneDrive Desktop
+                    os.path.join(base_path, 'OneDrive - Personal', 'Desktop'),  # OneDrive Personal
                     base_path  # Fallback to home directory
                 ]
                 

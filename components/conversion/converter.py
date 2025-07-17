@@ -6,6 +6,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -369,13 +370,40 @@ class EPUBConverter:
                 ]
 
                 try:
-                    from kindlecomicconverter.comic2ebook import main as kcc_main
+                    from kindlecomicconverter.comic2ebook import main as kcc_main  # type: ignore
                 except ImportError as e:
                     raise RuntimeError(f"KCC module not found: {e}")
 
                 self.logger.info("Starting KCC conversion...")
-                import time
                 start_time = time.time()
+                
+                # Windows-specific: Add retry logic and better temp file handling
+                if platform.system() == "Windows":
+                    import tempfile
+                    import atexit
+                    import gc
+                    
+                    # Force garbage collection to free any file handles
+                    gc.collect()
+                    
+                    # Set more permissive umask for temp files on Windows
+                    old_umask = None
+                    try:
+                        import stat
+                        old_umask = os.umask(0)
+                        os.umask(stat.S_IWGRP | stat.S_IWOTH)
+                    except (AttributeError, OSError):
+                        # umask not available on Windows, that's fine
+                        pass
+                    
+                    # Set temp directory with proper permissions
+                    original_temp = tempfile.gettempdir()
+                    try:
+                        # Ensure temp directory is writable
+                        temp_test = tempfile.mkdtemp(prefix='KCC_test_')
+                        os.rmdir(temp_test)
+                    except (OSError, PermissionError) as e:
+                        self.logger.warning(f"Temp directory permission issue: {e}")
                 
                 # Capture KCC stdout/stderr
                 captured_stdout = io.StringIO()
@@ -390,30 +418,66 @@ class EPUBConverter:
                     sys.stdout = captured_stdout
                     sys.stderr = captured_stderr
                     
-                    try:
-                        kcc_result = kcc_main(kcc_args)
-                        success = kcc_result == 0
-                        self.logger.debug(f"KCC main returned: {kcc_result}")
-                    except SystemExit as e:
-                        success = e.code == 0
-                        self.logger.debug(f"KCC exited with code: {e.code}")
-                    except Exception as e:
-                        self.logger.error(f"KCC execution error: {e}")
-                        success = False
-                        
-                        # Log subprocess errors for debugging
-                        if hasattr(e, 'cmd') and hasattr(e, 'returncode'):
-                            self.logger.error(f"Command that failed: {e.cmd}")
-                            self.logger.error(f"Return code: {e.returncode}")
-                            if hasattr(e, 'stderr') and e.stderr:
-                                self.logger.error(f"Process stderr: {e.stderr}")
-                            if hasattr(e, 'stdout') and e.stdout:
-                                self.logger.error(f"Process stdout: {e.stdout}")
+                    # Retry logic for Windows permission issues
+                    max_retries = 3 if platform.system() == "Windows" else 1
+                    retry_delay = 1.0  # seconds
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            kcc_result = kcc_main(kcc_args)
+                            success = kcc_result == 0
+                            self.logger.debug(f"KCC main returned: {kcc_result}")
+                            break  # Success, exit retry loop
+                        except SystemExit as e:
+                            success = e.code == 0
+                            self.logger.debug(f"KCC exited with code: {e.code}")
+                            break  # SystemExit is final, don't retry
+                        except (OSError, PermissionError) as e:
+                            if attempt < max_retries - 1:
+                                self.logger.warning(f"KCC permission error (attempt {attempt + 1}/{max_retries}): {e}")
+                                self.logger.info(f"Retrying in {retry_delay} seconds...")
+                                time.sleep(retry_delay)
+                                retry_delay *= 2  # Exponential backoff
+                                
+                                # Force cleanup and garbage collection between retries
+                                if platform.system() == "Windows":
+                                    import gc
+                                    gc.collect()
+                                continue
+                            else:
+                                self.logger.error(f"KCC execution failed after {max_retries} attempts: {e}")
+                                success = False
+                                break
+                        except Exception as e:
+                            self.logger.error(f"KCC execution error: {e}")
+                            success = False
+                            
+                            # Log subprocess errors for debugging if available
+                            cmd = getattr(e, 'cmd', None)
+                            if cmd:
+                                self.logger.error(f"Command that failed: {cmd}")
+                            returncode = getattr(e, 'returncode', None)
+                            if returncode is not None:
+                                self.logger.error(f"Return code: {returncode}")
+                            stderr = getattr(e, 'stderr', None)
+                            if stderr:
+                                self.logger.error(f"Process stderr: {stderr}")
+                            stdout = getattr(e, 'stdout', None)
+                            if stdout:
+                                self.logger.error(f"Process stdout: {stdout}")
+                            break  # Don't retry on unexpected errors
                 
                 finally:
                     # Restore stdout/stderr
                     sys.stdout = old_stdout
                     sys.stderr = old_stderr
+                    
+                    # Restore Windows umask if it was changed
+                    if platform.system() == "Windows" and 'old_umask' in locals() and old_umask is not None:
+                        try:
+                            os.umask(old_umask)
+                        except (AttributeError, OSError):
+                            pass
                     
                     execution_time = time.time() - start_time
                     self.logger.info(f"KCC completed in {execution_time:.2f}s")
@@ -505,7 +569,10 @@ class EPUBConverter:
                     ordered_html_files.append(os.path.join('html', file))
 
             # Sort HTML files by page number if possible
-            ordered_html_files.sort(key=lambda x: int(re.search(r'page-(\d+)', x).group(1)) if re.search(r'page-(\d+)', x) else float('inf'))
+            def extract_page_number(filename):
+                match = re.search(r'page-(\d+)', filename)
+                return int(match.group(1)) if match else float('inf')
+            ordered_html_files.sort(key=extract_page_number)
 
         return ordered_html_files
 

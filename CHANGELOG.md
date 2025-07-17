@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.6] - 2025-01-15
+
+### Fixed
+- Windows file permission errors during KCC conversion with retry mechanism
+- Enhanced temporary file handling and cleanup for Windows platform
+
 ## [1.2.5] - 2025-07-01
 
 ### Updated

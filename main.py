@@ -27,8 +27,11 @@ log_file_path = setup_logging(debug_mode=False)
 logger = get_logger(__name__)
 
 # Log system information for debugging
-from components.logger_config import _dynamic_logger
-_dynamic_logger.log_system_info()
+try:
+    from components.logger_config import _dynamic_logger
+    _dynamic_logger.log_system_info()
+except Exception as e:
+    logger.warning(f"Could not log system info: {e}")
 
 # Fix numpy/OpenBLAS stack overflow on macOS ARM64 BEFORE importing any modules
 if sys.platform == "darwin":
