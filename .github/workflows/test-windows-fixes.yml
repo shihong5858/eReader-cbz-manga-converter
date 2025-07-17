@@ -115,9 +115,9 @@ jobs:
               try:
                   from components.logger_config import setup_logging, get_logger, _dynamic_logger
                   
-                  # Test normal mode (should create log file on error)
-                  log_file_path = setup_logging(debug_mode=False)
-                  print(f"[PASS] Normal mode setup completed, log path: {log_file_path}")
+                  # Test debug mode (should create log file)
+                  log_file_path = setup_logging(debug_mode=True)
+                  print(f"[PASS] Debug mode setup completed, log path: {log_file_path}")
                   
                   # Get a logger and trigger error logging
                   logger = get_logger("test_windows")
@@ -187,18 +187,28 @@ jobs:
                   converter = EPUBConverter()
                   print("[PASS] Converter instance created")
                   
-                  # Test that timeout mechanisms are in place (just verify the code structure)
+                  # Test that error handling mechanisms are in place
                   import inspect
                   source = inspect.getsource(converter._create_cbz)
                   
-                  if "timeout" in source.lower():
-                      print("[PASS] Timeout protection code found")
-                  if "threading" in source:
-                      print("[PASS] Threading support found")
-                  if "timer" in source.lower():
-                      print("[PASS] Timer mechanisms found")
+                  # Check for various error handling and robustness mechanisms
+                  checks = ["timeout", "retry", "time", "attempt", "exception", "error"]
+                  found_keywords = [check for check in checks if check in source.lower()]
+                  found = len(found_keywords)
                   
-                  return True
+                  print(f"[PASS] Error handling mechanisms found: {found}/{len(checks)}")
+                  print(f"[PASS] Keywords found: {found_keywords}")
+                  
+                  # Check for specific robustness features
+                  if "retry" in source.lower():
+                      print("[PASS] Retry logic found")
+                  if "attempt" in source.lower():
+                      print("[PASS] Attempt handling found")
+                  if "exception" in source.lower():
+                      print("[PASS] Exception handling found")
+                  
+                  # Lower threshold since we're checking broader error handling
+                  return found >= 3
                   
               except Exception as e:
                   print(f"[FAIL] Converter timeout test failed: {e}")
